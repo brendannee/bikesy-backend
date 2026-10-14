@@ -1,0 +1,24 @@
+{
+  "region": "tahoe",
+  "review_status": "approved 2026-10-14 by LTBC (Nick Speal): all motorway mainlines and motorway_link ways stay excluded (no allow_motorway_ways); facility checks Glenshire Dr, Donner Pass Rd, Jacks Valley Rd, Tahoe Blvd confirmed; no deny_ways or walk_bicycle_ways; minimum_bicycle_nodes intentionally left at the loose generated floor",
+  "minimum_bicycle_nodes": 62365,
+  "expected_walking_edges": 0,
+  "facilities": [
+    {
+      "way": 350491147,
+      "cyclelane": 2
+    },
+    {
+      "way": 29390618,
+      "cyclelane": 2
+    },
+    {
+      "way": 14289387,
+      "cyclelane": 2
+    },
+    {
+      "way": 345152752,
+      "cyclelane": 2
+    }
+  ]
+}
