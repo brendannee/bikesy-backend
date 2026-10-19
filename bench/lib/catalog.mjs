@@ -1,7 +1,7 @@
 // Pair catalogs: bench/pairs/<region>.json (curated) and <region>-sampled.json.
 // See bench/README.md#pair-catalogs for the format.
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const BENCH_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -29,6 +29,41 @@ export function loadPairSet(region, set, path = pairSetPath(region, set)) {
   return { set, path, ...catalog, pairs: catalog.pairs ?? [] };
 }
 
+// Sets that run by default when their file exists: the curated pairs, the sampled
+// sets and the realistic set. `user` is the local catalog bench/add-trips.mjs writes.
+export const DEFAULT_SETS = ['curated', 'sampled', 'realistic', 'user'];
+
+// External pair files: "[NAME=]PATH". NAME defaults to the file name without .json. Used by
+// --pairs-file and $BIKESY_BENCH_PAIRS (a ':'-separated list of the same).
+export function parsePairsFileSpec(spec) {
+  const match = /^([A-Za-z][\w-]*)=(.+)$/.exec(spec);
+  const path = resolve((match ? match[2] : spec).replace(/^~(?=\/)/, process.env.HOME ?? '~'));
+  return { name: match ? match[1] : basename(path).replace(/\.json$/, ''), path };
+}
+
+export function pairsFileSpecs(cliSpecs = [], env = process.env) {
+  return [...(env.BIKESY_BENCH_PAIRS ? env.BIKESY_BENCH_PAIRS.split(':').filter(Boolean) : []), ...cliSpecs].map(parsePairsFileSpec);
+}
+
+// Catalogs to run. `sets` names catalogs in bench/pairs (default: DEFAULT_SETS that exist).
+// Each external file joins the set of its name (appending to a committed set of that name,
+// so restricted pairs can extend `realistic`), or is a set of its own; files are always
+// included. Pair ids must be unique within a set.
+export function loadCatalogs(region, { sets, files = [] } = {}) {
+  const names = sets ?? DEFAULT_SETS.filter(set => existsSync(pairSetPath(region, set)));
+  const catalogs = new Map();
+  for (const set of names) catalogs.set(set, loadPairSet(region, set));
+  for (const { name, path } of files) {
+    const external = loadPairSet(region, name, path);
+    const existing = catalogs.get(name);
+    if (!existing) { catalogs.set(name, { ...external, paths: [path] }); continue; }
+    const ids = new Set(existing.pairs.map(p => p.id));
+    for (const pair of external.pairs) if (ids.has(pair.id)) throw new Error(`${path}: pair id ${pair.id} is already in set ${name}`);
+    catalogs.set(name, { ...existing, paths: [...(existing.paths ?? [existing.path]), path], pairs: [...existing.pairs, ...external.pairs] });
+  }
+  return [...catalogs.values()];
+}
+
 // A trip is one direction of a pair. Reverse trips swap from/to and keep the via point.
 export function expandTrips(catalog) {
   const trips = [];
@@ -47,4 +82,11 @@ export function matchesModes(selector, facets) {
   if (typeof selector === 'string') return facets.mode === selector;
   return Object.entries(selector).every(([facet, wanted]) =>
     Array.isArray(wanted) ? wanted.includes(facets[facet]) : facets[facet] === wanted);
+}
+
+// Catalog JSON with one pair per line, so diffs and file sizes stay small.
+export function stringifyCatalog(catalog) {
+  const { pairs = [], ...rest } = catalog;
+  const head = JSON.stringify(rest, null, 2).replace(/\n}$/, '');
+  return `${head}${Object.keys(rest).length ? ',' : ''}\n  "pairs": [\n${pairs.map(p => '    ' + JSON.stringify(p)).join(',\n')}\n  ]\n}\n`;
 }

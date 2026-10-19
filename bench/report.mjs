@@ -216,7 +216,7 @@ $('subtitle').innerHTML = D.runs.map(r => esc(r.name) + ' · ' + esc(r.created.s
   '<br>Baseline: <b>' + esc(D.baseline) + '</b>. Generated ' + esc(D.generated.slice(0, 16).replace('T', ' ')) + ' UTC.';
 
 // Scorecard
-const COLS = ['trips', 'no_route', 'pathological', 'pathological_firm', 'median_detour', 'p90_detour', 'high_stress_km', 'high_stress_share', 'unpaved_share', 'class_i_share', 'median_climb_m', 'wilderness_km', 'expectation_pass_rate', 'same_route_share'];
+const COLS = ['trips', 'no_route', 'pathological', 'pathological_firm', 'median_detour', 'p90_detour', 'weighted_median_detour', 'weighted_pathological_share', 'high_stress_km', 'high_stress_share', 'unpaved_share', 'class_i_share', 'median_climb_m', 'wilderness_km', 'expectation_pass_rate', 'same_route_share'];
 function deltaHtml(v, b, def) {
   if (v === null || b === null || v === undefined || b === undefined) return '';
   const d = v - b; if (Math.abs(d) < 1e-9) return '';

@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../src/config.js';
 import { decode, encode } from '../src/polyline.js';
-import { BENCH_DIR, expandTrips, loadPairSet, matchesModes, pairSetPath } from './lib/catalog.mjs';
+import { BENCH_DIR, DEFAULT_SETS, expandTrips, loadCatalogs, matchesModes, pairsFileSpecs } from './lib/catalog.mjs';
 import { createCache, hashKey } from './lib/cache.mjs';
 import { engineIdentity, imagePolicy, startEngine, stopEngine, waitForEngine } from './lib/engine.mjs';
 import { lineLength, parseGpx, preparePolygons, similarity, simplify } from './lib/geo.mjs';
@@ -35,7 +35,11 @@ export const SAME_ROUTE_SIMILARITY = 0.95;
 
 const HELP = `Usage: node bench/run.mjs --region REGION [options]
   --tuning NAME       tuning or sweep name in bench/tunings/REGION/ (repeatable; default: config)
-  --sets LIST         pair sets, comma separated (default: curated plus sampled if present)
+  --sets LIST         pair sets, comma separated (default: ${DEFAULT_SETS.join(', ')}, those that exist)
+  --pairs-file [NAME=]FILE
+                      extra pair catalog from outside the repo (repeatable; also $BIKESY_BENCH_PAIRS,
+                      ':'-separated). It joins the set NAME (default: the file name), appending to a
+                      committed set of that name, e.g. realistic=.../pairs-realistic-restricted.json
   --pairs LIST        only these pair ids;  --tags LIST  only pairs with any of these tags
   --limit N           only the first N pairs of each set
   --name NAME         run name (default: the tuning names); output goes to
@@ -50,7 +54,7 @@ const HELP = `Usage: node bench/run.mjs --region REGION [options]
 function parse() {
   const { values } = parseArgs({ options: {
     region: { type: 'string' }, tuning: { type: 'string', multiple: true }, sets: { type: 'string' },
-    pairs: { type: 'string' }, tags: { type: 'string' }, limit: { type: 'string' }, name: { type: 'string' },
+    pairs: { type: 'string' }, 'pairs-file': { type: 'string', multiple: true }, tags: { type: 'string' }, limit: { type: 'string' }, name: { type: 'string' },
     out: { type: 'string' }, cache: { type: 'string' }, image: { type: 'string' }, port: { type: 'string' },
     valhalla: { type: 'string' }, concurrency: { type: 'string' }, 'keep-engine': { type: 'boolean' }, help: { type: 'boolean' },
   } });
@@ -102,11 +106,9 @@ async function main() {
 
   const tunings = (args.tuning ?? ['config']).flatMap(name => loadTunings(region, regionConfig, name));
   if (new Set(tunings.map(t => t.name)).size !== tunings.length) throw new Error('Duplicate tuning names');
-  const setNames = args.sets ? args.sets.split(',') : ['curated', ...(existsSync(pairSetPath(region, 'sampled')) ? ['sampled'] : [])];
   const pairFilter = args.pairs ? new Set(args.pairs.split(',')) : null;
   const tagFilter = args.tags ? args.tags.split(',') : null;
-  const catalogs = setNames.map(set => {
-    const catalog = loadPairSet(region, set);
+  const catalogs = loadCatalogs(region, { sets: args.sets?.split(','), files: pairsFileSpecs(args['pairs-file']) }).map(catalog => {
     let pairs = catalog.pairs.filter(p => (!pairFilter || pairFilter.has(p.id)) && (!tagFilter || p.tags?.some(t => tagFilter.includes(t))));
     if (args.limit) pairs = pairs.slice(0, Number(args.limit));
     return { ...catalog, pairs };
@@ -176,7 +178,7 @@ async function main() {
   let commit = null;
   try { commit = execFileSync('git', ['-C', BENCH_DIR, 'describe', '--always', '--dirty'], { encoding: 'utf8' }).trim(); } catch {}
   const meta = { name, region, created: new Date().toISOString(), commit, engines: engineMeta,
-    sets: catalogs.map(c => ({ set: c.set, path: c.path, pairs: c.pairs.length, trips: trips.filter(t => t.set === c.set).length })) };
+    sets: catalogs.map(c => ({ set: c.set, path: c.path, ...(c.paths ? { paths: c.paths } : {}), pairs: c.pairs.length, trips: trips.filter(t => t.set === c.set).length })) };
   const tripRows = trips.map(t => ({ key: t.key, set: t.set, pair: t.pair.id, name: t.pair.name, direction: t.direction,
     tags: t.pair.tags ?? [], why: t.pair.why, from: t.from, to: t.to, via: t.via }));
   const routeRows = results.map(({ _points, ...r }) => r);
@@ -249,7 +251,7 @@ async function runEngineGroup({ engine, identity, group, trips, regionConfig, ca
       }
     }
     const tripReferences = (trip.pair.references ?? []).filter(r => matchesModes(r.modes, mode.facets)).map(r => references.get(r.path));
-    const result = { tuning: tuning.name, mode: mode.name, trip: trip.key, set: trip.set, pair: trip.pair.id, direction: trip.direction,
+    const result = { tuning: tuning.name, mode: mode.name, trip: trip.key, set: trip.set, pair: trip.pair.id, direction: trip.direction, weight: trip.pair.weight ?? null,
       ok: Boolean(route), error: route ? null : record.error, engine_error: record.engine_error,
       response_sha256: record.response_sha256 ?? null, reported_distance_m: record.total_distance ?? null, metrics: route ? computeMetrics({ route, shortest: shortest.get(trip.key), shortestFirm: shortestFirm.get(trip.key), via,
         references: tripReferences, areas, trip, mode }) : {} };

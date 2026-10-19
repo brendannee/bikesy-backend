@@ -13,6 +13,18 @@ export function quantile(values, q) {
   return sorted[low] + (sorted[high] - sorted[low]) * (position - low);
 }
 
+// Weighted statistics for pair sets whose pairs carry a `weight` (the realistic set): a route
+// result's weight is its pair's. Null when no route has a weight.
+export function weightedQuantile(items, q) {
+  const sorted = items.filter(i => Number.isFinite(i.value) && i.weight > 0).sort((a, b) => a.value - b.value);
+  const total = sorted.reduce((s, i) => s + i.weight, 0);
+  if (!total) return null;
+  let seen = 0;
+  for (const item of sorted) { seen += item.weight; if (seen >= q * total - 1e-12) return item.value; }
+  return sorted.at(-1).value;
+}
+const weighted = routes => routes.filter(r => r.weight > 0);
+
 const ok = routes => routes.filter(r => r.ok);
 const metric = (routes, name) => ok(routes).map(r => r.metrics[name]).filter(Number.isFinite);
 const sum = values => values.reduce((a, b) => a + b, 0);
@@ -29,6 +41,10 @@ export const AGGREGATES = [
   { name: 'p90_detour', label: 'p90 detour', format: 'ratio', better: 'lower', compute: routes => quantile(metric(routes, 'detour'), 0.9) },
   { name: 'pathological', label: `No route or detour > ${PATHOLOGICAL_DETOUR}×`, format: 'count', better: 'lower', compute: routes => routes.filter(isPathological).length },
   { name: 'pathological_firm', label: 'Of those, also > 1.5× shortest firm', format: 'count', better: 'lower', compute: routes => routes.filter(isPathologicalFirm).length },
+  { name: 'weighted_median_detour', label: 'Median detour (pair-weighted)', format: 'ratio', better: 'lower',
+    compute: routes => weightedQuantile(ok(weighted(routes)).map(r => ({ value: r.metrics.detour, weight: r.weight })), 0.5) },
+  { name: 'weighted_pathological_share', label: 'Pathological (pair-weighted)', format: 'share', better: 'lower',
+    compute: routes => weighted(routes).length ? sum(weighted(routes).filter(isPathological).map(r => r.weight)) / sum(weighted(routes).map(r => r.weight)) : null },
   { name: 'distance_km', label: 'Total distance', format: 'km', better: null, compute: routes => sum(metric(routes, 'distance_km')) },
   { name: 'high_stress_km', label: 'High-stress km', format: 'km', better: 'lower', compute: routes => sum(metric(routes, 'high_stress_km')) },
   { name: 'high_stress_share', label: 'High-stress share', format: 'share', better: 'lower',
