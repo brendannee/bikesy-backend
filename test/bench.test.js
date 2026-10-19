@@ -10,7 +10,7 @@ import { coverage, densify, haversine, insideAny, lineLength, parseGpx, prepareP
 import { climb, computeMetrics, isClassI, isHighStress, isUnpaved, kmInside, stressClass } from '../bench/metrics.mjs';
 import { evaluateExpectations } from '../bench/expectations.mjs';
 import { computeAggregates, quantile } from '../bench/aggregates.mjs';
-import { configFacets, expandSweep, listTunings, loadTunings, resolveSpec } from '../bench/lib/tunings.mjs';
+import { configFacets, expandPath, expandSweep, listTunings, loadTunings, resolveSpec } from '../bench/lib/tunings.mjs';
 import { expandTrips, loadPairSet, matchesModes } from '../bench/lib/catalog.mjs';
 import { hashKey, stableJson } from '../bench/lib/cache.mjs';
 import { createValhallaSource, responseHash } from '../bench/lib/sources.mjs';
@@ -152,7 +152,18 @@ test('tunings: config facets, base merge, tuning-wide options and sweeps', () =>
   assert.ok(resolved.modes.every(m => m.options.use_hills === 0.5));
 });
 
+test('tunings: engine paths expand ~/ and environment variables', () => {
+  const env = { DIR: '/x/variants' };
+  assert.equal(expandPath('${DIR}/hy50.bin', env), '/x/variants/hy50.bin');
+  assert.equal(expandPath('$DIR/hy50.bin', env), '/x/variants/hy50.bin');
+  assert.ok(expandPath('~/a.bin', env).endsWith('/a.bin') && !expandPath('~/a.bin', env).startsWith('~'));
+  assert.equal(expandPath('rel/a.bin', env), 'rel/a.bin');
+  assert.throws(() => expandPath('${MISSING}/a.bin', env), /MISSING is not set/);
+});
+
 test('checked-in pair catalogs and tunings load for every region', () => {
+  // Policy variants live outside the repository; loading only resolves their paths.
+  process.env.BIKESY_POLICY_VARIANTS ??= '/policy-variants';
   for (const { region, config } of listRegionConfigs()) {
     const runtime = loadConfig({ BIKESY_CONFIG: `config/${region}.json` });
     for (const name of listTunings(region)) assert.ok(loadTunings(region, runtime, name).length, `${region}/${name}`);

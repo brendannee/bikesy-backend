@@ -19,9 +19,9 @@
       }
     },
     "engine.policy": {
-      "base": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/base.bin",
-      "hy100": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/hy100.bin",
-      "cap15": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/cap15.bin"
+      "base": "${BIKESY_POLICY_VARIANTS}/base.bin",
+      "hy100": "${BIKESY_POLICY_VARIANTS}/hy100.bin",
+      "cap15": "${BIKESY_POLICY_VARIANTS}/cap15.bin"
     }
   }
 }

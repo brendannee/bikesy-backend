@@ -78,7 +78,8 @@ async function main() {
   if (out && !values.fresh && existsSync(out)) catalog = JSON.parse(readFileSync(out, 'utf8'));
   if (catalog.region && catalog.region !== region) throw new Error(`${out}: region ${catalog.region} is not ${region}`);
   const before = catalog.pairs.length;
-  const collector = new PairCollector({ bounds: config.bounds, zoneInfo, snap: values.snap, existing: catalog.pairs });
+  const collector = new PairCollector({ bounds: config.bounds, zoneInfo, snap: values.snap, existing: catalog.pairs,
+    regionName: region.length <= 3 ? region.toUpperCase() : region.charAt(0).toUpperCase() + region.slice(1) });
   const references = [];
   let added = 0;
 

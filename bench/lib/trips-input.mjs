@@ -137,14 +137,14 @@ export const roundToGrid = ({ lat, lon }) => ({ lat: Number((Math.round(lat / SN
 // Collects pairs into a catalog. Pairs already in `existing` stay, except one with the same
 // id and endpoints, which is replaced, so re-running an input file is idempotent.
 export class PairCollector {
-  constructor({ bounds, zoneInfo = null, snap = false, existing = [] } = {}) {
-    this.bounds = bounds; this.zoneInfo = zoneInfo; this.snap = snap;
+  constructor({ bounds, zoneInfo = null, snap = false, existing = [], regionName = 'Region' } = {}) {
+    this.bounds = bounds; this.zoneInfo = zoneInfo; this.snap = snap; this.regionName = regionName;
     this.pairs = [...existing];
     this.errors = [];
   }
 
   label(point) {
-    if (!this.zoneInfo) return 'Tahoe';
+    if (!this.zoneInfo) return this.regionName;
     const zone = zoneOf(point.lat, point.lon, this.zoneInfo);
     return zone === 'other' ? 'Outside town' : this.zoneInfo.names[zone];
   }

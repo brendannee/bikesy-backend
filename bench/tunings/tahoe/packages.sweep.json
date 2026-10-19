@@ -2,7 +2,7 @@
   "description": "Sweep 4: candidate packages (per-mode use_hills and use_roads) on the hy50 policy, to compare in one report with both modes (mode separation needs both). rec = recommended; the others vary one thing each.",
   "base": "config",
   "engine": {
-    "policy": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/hy50.bin"
+    "policy": "${BIKESY_POLICY_VARIANTS}/hy50.bin"
   },
   "grid": {
     "modes": {

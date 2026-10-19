@@ -6,8 +6,8 @@
     "modes.1.options.use_roads": [0, 0.1, 0.25],
     "options.use_hills": [0.75, 0.85, 0.95],
     "engine.policy": {
-      "hy50": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/hy50.bin",
-      "cap15": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/cap15.bin"
+      "hy50": "${BIKESY_POLICY_VARIANTS}/hy50.bin",
+      "cap15": "${BIKESY_POLICY_VARIANTS}/cap15.bin"
     }
   }
 }

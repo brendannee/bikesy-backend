@@ -20,7 +20,16 @@ export function configFacets(id, options) {
 }
 
 const clone = value => structuredClone(value);
-const expandHome = path => path.startsWith('~/') ? resolve(homedir(), path.slice(2)) : path;
+// "~/" is the home directory and $VAR or ${VAR} an environment variable, so tunings can
+// name files kept outside the repository without naming anyone's home directory.
+export function expandPath(path, env = process.env) {
+  const expanded = path.replace(/\$(?:\{(\w+)\}|(\w+))/g, (_, braced, bare) => {
+    const name = braced ?? bare;
+    if (env[name] === undefined) throw new Error(`${path}: environment variable ${name} is not set`);
+    return env[name];
+  });
+  return expanded.startsWith('~/') ? resolve(homedir(), expanded.slice(2)) : expanded;
+}
 
 // Set a dotted path such as "options.use_hills" or "engine.policy" on a tuning spec.
 export function setPath(target, path, value) {
@@ -49,13 +58,13 @@ export function expandSweep(sweep, sweepName) {
 function readSpec(path) {
   const spec = JSON.parse(readFileSync(path, 'utf8'));
   spec.file = path;
-  // Engine files are relative to the tuning file; "~/" means the home directory.
+  // Engine files are relative to the tuning file, after expandPath.
   for (const key of ['policy']) {
-    if (typeof spec.engine?.[key] === 'string') spec.engine[key] = resolve(dirname(path), expandHome(spec.engine[key]));
+    if (typeof spec.engine?.[key] === 'string') spec.engine[key] = resolve(dirname(path), expandPath(spec.engine[key]));
   }
   if (spec.grid?.['engine.policy']) {
     const g = spec.grid['engine.policy'];
-    const fix = p => typeof p === 'string' ? resolve(dirname(path), expandHome(p)) : p;
+    const fix = p => typeof p === 'string' ? resolve(dirname(path), expandPath(p)) : p;
     spec.grid['engine.policy'] = Array.isArray(g) ? g.map(fix) : Object.fromEntries(Object.entries(g).map(([k, v]) => [k, fix(v)]));
   }
   return spec;
