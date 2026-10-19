@@ -13,6 +13,7 @@ import { PairCollector, Places, addGpx, addLinks, addTable, parseCsv, parseShare
 import { haversine } from '../bench/lib/geo.mjs';
 import { random } from '../bench/sample-pairs.mjs';
 import { splitPairs, splitPoints } from '../bench/split-open.mjs';
+import { render, summarize } from '../bench/set-summary.mjs';
 import { computeAggregates, weightedQuantile } from '../bench/aggregates.mjs';
 
 const tahoe = loadConfig({ BIKESY_CONFIG: 'config/tahoe.json' });
@@ -250,4 +251,16 @@ test('pair-weighted aggregates', () => {
   assert.equal(a.weighted_median_detour, 1.1);
   const none = computeAggregates([r(1.1, null)]);
   assert.deepEqual([none.weighted_median_detour, none.weighted_pathological_share], [null, null]);
+});
+
+test('set summary: per-set rows, combined sets and a markdown table', () => {
+  const route = (set, detour, extra = {}) => ({ tuning: 't', mode: '1', set, ok: true, weight: null, metrics: { detour, distance_km: 4, high_stress_km: 1, unpaved_km: 0, class_i_share: 0.5, climb_m: 20 }, expectations: [], same_as: [], ...extra });
+  const routes = [route('a', 1.1), route('a', 1.7), route('b', 1.0), route('b', 1.0, { weight: 1 })];
+  const s = summarize(routes.slice(0, 2));
+  assert.deepEqual([s.trips, s.median_km, s.pathological, s.pathological_share, s.high_stress_share], [2, 4, 1, 0.5, 0.25]);
+  const text = render({ meta: { name: 'x', created: '2026-10-19T10:00:00Z', commit: 'abc' }, tunings: [{ name: 't', modes: [{ name: '1', facets: { mode: '1', traffic: 'quiet' } }] }], routes },
+    { ab: ['a', 'b'] });
+  assert.match(text, /## t, mode 1 \(traffic: quiet\)/);
+  assert.match(text, /\| a \| 2 \| 4\.0 /);
+  assert.match(text, /\| ab \| 4 \|/);
 });

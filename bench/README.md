@@ -406,3 +406,8 @@ by divergence, problems (no route, detour > 1.5×, failed expectations), and a p
 view: map with every tuning's route (the focused one coloured by stress or surface,
 the shortest rideable route dotted), elevation profile and the metrics table. It loads
 Leaflet 1.9.4 from cdnjs and OSM tiles; open it locally.
+
+`node bench/set-summary.mjs RUN_DIR [--combine NAME=SET+SET]` writes `summary.md`: one table
+per tuning and mode with a row per pair set (trips, median route length and climb, median
+and p90 detour, pathological routes, stress, unpaved and Class I shares, pair-weighted
+columns), for judging a new set against the old ones.
