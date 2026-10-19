@@ -10,17 +10,26 @@
 // within --snap-m metres; the snapped points are stored. Sampled pairs are one_way: a
 // random direction is as good as both. Needs osmium-tool and a running bench engine.
 //   node bench/sample-pairs.mjs --region tahoe --pbf .../data/region.osm.pbf [--count 200] [--seed 1]
+//
+// Weighted mode (--points): instead of building density, sample trip purposes, origin and
+// destination categories and weighted points from a point file (bench/points/REGION.geojson,
+// see lib/points.mjs for the method). Zones are flattened with --zone-alpha so the largest
+// towns do not dominate. Writes bench/pairs/<region>-sampled-weighted.json. Needs only the
+// engine, not osmium.
+//   node bench/sample-pairs.mjs --region tahoe --points bench/points/tahoe.geojson [--count 200] [--seed 1]
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../src/config.js';
 import { BENCH_DIR, pairSetPath } from './lib/catalog.mjs';
 import { haversine } from './lib/geo.mjs';
+import { snapToBicycleEdge } from './lib/locate.mjs';
+import { createPointSampler, loadPoints as loadWeightedPoints, loadZones, seasonFilter, zoneShares } from './lib/points.mjs';
 
 // Small, fast, seedable PRNG (mulberry32).
 export function random(seed) {
@@ -69,18 +78,55 @@ async function loadPoints(pbf, bounds) {
   }
 }
 
-async function snap(valhalla, points) {
-  const response = await fetch(new URL('locate', valhalla), { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ locations: points.map(([lat, lon]) => ({ lat, lon })), costing: 'bicycle',
-      costing_options: { bicycle: { bicycle_type: 'Hybrid' } } }) });
-  const body = await response.json();
-  if (!Array.isArray(body)) throw new Error(`locate: ${body.error ?? response.status}`);
-  return body.map((result, i) => {
-    const edge = result?.edges?.[0];
-    if (!edge) return null;
-    const snapped = [Number(edge.correlated_lat.toFixed(6)), Number(edge.correlated_lon.toFixed(6))];
-    return { point: snapped, distance: haversine(points[i], snapped) };
-  });
+function writeCatalog(out, header, pairs) {
+  writeFileSync(out, `{\n  "region": ${JSON.stringify(header.region)},\n  "notes": ${JSON.stringify(header.notes)},\n  "generator": ${JSON.stringify(header.generator)},\n  "pairs": [\n${pairs.map(p => '    ' + JSON.stringify(p)).join(',\n')}\n  ]\n}\n`);
+}
+
+// Weighted mode: purposes, categories and weighted points instead of building density.
+async function sampleWeighted(values) {
+  const region = values.region;
+  const params = { count: Number(values.count ?? 200), seed: Number(values.seed ?? 1), min_km: Number(values['min-km'] ?? 1),
+    max_km: Number(values['max-km'] ?? 15), zone_alpha: Number(values['zone-alpha'] ?? 0.5), weight_power: Number(values['weight-power'] ?? 0.5),
+    decay_km: Number(values['decay-km'] ?? 4), snap_m: Number(values['snap-m'] ?? 150), season: values.season ?? 'summer' };
+  const valhalla = (values.valhalla ?? 'http://127.0.0.1:18002/').replace(/\/?$/, '/');
+  const pointsPath = resolve(values.points);
+  const loaded = loadWeightedPoints(pointsPath);
+  const points = loaded.points.filter(seasonFilter(params.season));
+  const zoneInfo = loadZones(resolve(dirname(pointsPath), `${region}-zones.json`));
+  const rand = random(params.seed);
+  const sampler = createPointSampler(points, loaded.purposes, rand, { zoneAlpha: params.zone_alpha, weightPower: params.weight_power,
+    decayKm: params.decay_km, minKm: params.min_km, maxKm: params.max_km });
+  const missing = Object.keys(loaded.purposes).filter(name => !sampler.purposes.some(p => p.name === name));
+  if (missing.length) console.warn(`Purposes without usable categories in ${values.points} (dropped, shares renormalised): ${missing.join(', ')}`);
+
+  const label = p => p.name ?? `${p.category} in ${zoneInfo.names[p.zone] ?? 'the basin area'}`;
+  const placeLabel = p => ({ home: `${zoneInfo.names[p.zone] ?? 'outlying'} homes`, work: `${zoneInfo.names[p.zone] ?? 'outlying'} jobs` })[p.category] ?? label(p);
+  const pairs = [], purposeCount = {};
+  let attempts = 0, rejected = 0;
+  while (pairs.length < params.count) {
+    if (++attempts > params.count * 200) throw new Error('Could not find enough pairs; relax --min-km/--max-km or --snap-m');
+    const draw = sampler.next();
+    if (!draw) continue;
+    const [a, b] = await snapToBicycleEdge(valhalla, [[draw.from.lat, draw.from.lon], [draw.to.lat, draw.to.lon]]);
+    if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m) { rejected++; continue; }
+    const km = haversine(a.point, b.point) / 1000;
+    if (km < params.min_km || km > params.max_km) { rejected++; continue; }
+    const n = String(pairs.length + 1).padStart(3, '0');
+    purposeCount[draw.purpose] = (purposeCount[draw.purpose] ?? 0) + 1;
+    pairs.push({ id: `w${n}`, name: `${draw.purpose}: ${placeLabel(draw.from)} to ${placeLabel(draw.to)}`,
+      from: { lat: a.point[0], lon: a.point[1] }, to: { lat: b.point[0], lon: b.point[1] }, one_way: true,
+      tags: ['sampled', 'weighted', draw.purpose], purpose: draw.purpose, km: Number(km.toFixed(2)) });
+  }
+  const origins = zoneShares(pairs, zoneInfo, 'from'), destinations = zoneShares(pairs, zoneInfo, 'to');
+  const sha = createHash('sha256').update(readFileSync(pointsPath)).digest('hex');
+  const out = resolve(values.out ?? pairSetPath(region, values.set ?? 'sampled-weighted'));
+  const header = { region, notes: 'Generated by bench/sample-pairs.mjs --points; do not edit by hand. km = straight-line distance. '
+    + 'Purposes, categories and weights come from the point file (bench/points); zones are flattened by zone_alpha.',
+  generator: { ...params, points_file: pointsPath.replace(/^.*\//, ''), points_sha256: sha, points: points.length, rejected_snaps: rejected,
+    purposes: Object.fromEntries(sampler.purposes.map(p => [p.name, Number((p.share / sampler.purposes.reduce((t, q) => t + q.share, 0)).toFixed(3))])),
+    purpose_pairs: purposeCount, origin_zone_share: origins.share, carson_origin_share: origins.carson, carson_destination_share: destinations.carson } };
+  writeCatalog(out, header, pairs);
+  console.log(`Wrote ${pairs.length} pairs to ${out}; origins east of the Carson Range crest (Carson City / Valley): ${(origins.carson * 100).toFixed(0)}%`);
 }
 
 async function main() {
@@ -88,9 +134,14 @@ async function main() {
     region: { type: 'string' }, pbf: { type: 'string' }, count: { type: 'string' }, seed: { type: 'string' },
     'min-km': { type: 'string' }, 'max-km': { type: 'string' }, alpha: { type: 'string' }, 'cell-m': { type: 'string' },
     'snap-m': { type: 'string' }, valhalla: { type: 'string' }, out: { type: 'string' },
+    points: { type: 'string' }, 'zone-alpha': { type: 'string' }, 'weight-power': { type: 'string' }, 'decay-km': { type: 'string' },
+    season: { type: 'string' }, set: { type: 'string' },
   } });
+  if (values.region && values.points) return sampleWeighted(values);
   if (!values.region || !values.pbf) {
-    console.error('Usage: node bench/sample-pairs.mjs --region REGION --pbf REGION.osm.pbf [--count 200] [--seed 1] [--valhalla URL]');
+    console.error('Usage: node bench/sample-pairs.mjs --region REGION --pbf REGION.osm.pbf [--count 200] [--seed 1] [--valhalla URL]\n'
+      + '       node bench/sample-pairs.mjs --region REGION --points POINTS.geojson [--count 200] [--seed 1] [--zone-alpha 0.5]\n'
+      + '         [--weight-power 0.5] [--decay-km 4] [--min-km 1] [--max-km 15] [--season summer|winter|all] [--set sampled-weighted] [--out FILE]');
     process.exit(2);
   }
   const params = { count: Number(values.count ?? 200), seed: Number(values.seed ?? 1), min_km: Number(values['min-km'] ?? 3),
@@ -120,7 +171,7 @@ async function main() {
       if (d >= params.min_km && d <= params.max_km) to = candidate;
     }
     if (!to) continue;
-    const [a, b] = await snap(valhalla, [from, to]);
+    const [a, b] = await snapToBicycleEdge(valhalla, [from, to]);
     if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m) continue;
     const d = haversine(a.point, b.point) / 1000;
     if (d < params.min_km || d > params.max_km) continue;
@@ -132,7 +183,7 @@ async function main() {
   const out = resolve(values.out ?? pairSetPath(values.region, 'sampled'));
   const header = { region: values.region, notes: 'Generated by bench/sample-pairs.mjs; do not edit by hand. km = straight-line distance.',
     generator: { ...params, extract: pbf.replace(/^.*\//, ''), extract_sha256: sha, points: points.length, cells: cells.size } };
-  writeFileSync(out, `{\n  "region": ${JSON.stringify(header.region)},\n  "notes": ${JSON.stringify(header.notes)},\n  "generator": ${JSON.stringify(header.generator)},\n  "pairs": [\n${pairs.map(p => '    ' + JSON.stringify(p)).join(',\n')}\n  ]\n}\n`);
+  writeCatalog(out, header, pairs);
   console.log(`Wrote ${pairs.length} pairs to ${out}`);
 }
 
