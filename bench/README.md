@@ -75,7 +75,7 @@ on the sampled ones.
 | --- | --- | --- |
 | `curated` | `tahoe.json` | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
 | `sampled` | `tahoe-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
-| `realistic` | `tahoe-realistic.json` | 68 pairs built from commute flows and places people go (LODES, OSM), each with a `purpose` and a relative `weight`. See [Realistic pairs](#realistic-pairs). |
+| `realistic` | `tahoe-realistic.json` | 71 pairs between public places, weighted by where people actually searched for routes on the Tahoe Bike Map (2019–2026), each with a `purpose`, a `share` and a relative `weight`. See [Realistic pairs](#realistic-pairs). |
 | `sampled-weighted` | `tahoe-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
 | `user` | `tahoe-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
 
@@ -85,8 +85,8 @@ loaded adds to it (ids must stay unique); otherwise it is a set of its own. File
 this way always run, whatever `--sets` says.
 
 ```sh
-# the committed realistic pairs plus the ones kept outside git (see Realistic pairs)
-npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/pairs-realistic-restricted.json
+# the committed realistic pairs plus extra ones kept outside git
+npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/extra-pairs.json
 ```
 
 ```json
@@ -174,17 +174,31 @@ should be judged on a Tahoe-wide mix as well as on the old one.
 
 ### Realistic pairs
 
-`tahoe-realistic.json` is built from public data: LODES 2023 commute flows (the largest
-home-to-job flows at bikeable distance), OSM schools, supermarkets, lodging, beaches,
-parks, trailheads and bike shops, joined to residential LODES points. Every pair has a
-`purpose`, a `source`, a `straight_km` and a relative `weight` (purpose share × demand;
-weights sum to 1 over the full 92-pair file, so the committed subset sums to less).
-Aggregates add pair-weighted columns (`weighted_median_detour`, `weighted_pathological_share`)
-for sets that have weights.
+`tahoe-realistic.json` comes from real demand: route searches on the old Tahoe Bike Map
+routing server, April 2019 to October 2026. Before aggregation, uptime monitors, developer
+scripts, QR sign scans, repeats, same-point searches and searches placed on Lake Tahoe (about
+one in five, almost all mis-taps) were removed, leaving one trip per exact start and end per day
+(32,601 trips in the bbox and at least 0.3 km long). Trips are binned into ~1 km cells; for each
+community-area pair the busiest cell pairs (at least 10 trips) are kept, and each end is
+replaced by the nearest named OpenStreetMap place within 0.6 km, preferring trailheads,
+beaches, parks and lodging. The 79 area pairs used cover 73% of trips.
+
+Each pair has a `purpose` (inferred: `recreation` when an end is a beach, trailhead or park or
+the trip is 12 km or longer, otherwise `town`), a `straight_km`, a `share` (percent of all
+searched trips it stands for) and a `weight` that sums to 1. Weights are raked to two margins:
+each area pair's share of trips, and the real straight-line distance mix, which the file
+records under `distance_mix`. Aggregates add pair-weighted columns (`weighted_median_detour`,
+`weighted_pathological_share`) for sets that have weights. The file holds only place points,
+names and shares: no individual searches, usage coordinates or counts. The search logs stay
+with LTBC; `build_usage_pairs.py` in its research workspace regenerates the file.
+
+This set replaced an earlier one built from LODES commute flows and OSM places (2026-10-18).
+That set gave Carson Valley 18% of its weight against 1.6% of real searches and had no trips
+over 12 km. Weighted results from runs before the change aren't comparable with later ones.
 
 `bench/check-pairs.mjs` verifies every endpoint snaps to a bicycle edge within 150 m with
 `/locate` and, with `--fix`, stores the snapped points and drops pairs that do not snap
-(listed as `dropped_unsnappable`). Six of the 74 open pairs were dropped that way.
+(listed as `dropped_unsnappable`). All 71 pairs snap (largest snap 116 m).
 
 ```sh
 node bench/check-pairs.mjs --region tahoe --sets realistic,sampled-weighted --valhalla http://127.0.0.1:18072/
@@ -197,36 +211,33 @@ Only data from sources that allow it is committed. `lib/open-data.mjs` holds the
 
 | Source | Used for | Committed? |
 | --- | --- | --- |
-| US Census LEHD LODES 2023 | home and job points, commute flows | Yes; public domain. |
-| OpenStreetMap | places (schools, shops, food, lodging, beaches, parks) | Yes; ODbL, attribution "© OpenStreetMap contributors" is in the files. |
+| US Census LEHD LODES 2023 | home and job points (weighted sampler) | Yes; public domain. |
+| OpenStreetMap | places (schools, shops, food, lodging, beaches, parks), realistic pair endpoints | Yes; ODbL, attribution "© OpenStreetMap contributors" is in the files. |
+| Tahoe Bike Map searches, 2019–2026 (LTBC) | realistic pair weights | Aggregated area-pair shares only, published by LTBC. The logs themselves are not committed. |
 | TRPA layers (travel-model trip ends, mobility hubs) | town-centre and hub points | No. "Copyright TRPA", public download, no licence grant. |
 | GTFS feeds (TART, TTD, Jump Around Carson) | transit stops weighted by service | No. The feeds state no licence. |
 
 **Licence of the committed data.** The data files under `bench/points/`, `bench/areas/` and
 `bench/pairs/` contain OpenStreetMap data, © OpenStreetMap contributors, available under the
 [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/), and LODES data
-(public domain). Each file carries an `attribution` field, which the generators
+(public domain); the realistic pair weights come from LTBC's aggregated map searches. Each file carries an `attribution` field, which the generators
 (`sample-pairs.mjs`, `build-areas.mjs`, `split-open.mjs`) write. The ODbL covers that data
 only, not the bench code. Reports and run results built from it are produced works:
 credit OpenStreetMap when you publish them. Committed sizes: `points/tahoe.geojson`
-1.2 MB (94 KB gzipped), `areas/tahoe-wilderness.geojson` 99 KB, Tahoe pair files 135 KB in all.
+1.2 MB (94 KB gzipped), `areas/tahoe-wilderness.geojson` 99 KB, Tahoe pair files 138 KB in all.
 
-So `bench/points/tahoe.geojson` has no `transit` or `trpa-taz` category, and the 18 realistic
-pairs that use transit stops or TRPA zones (17 after the snap check) are not in
-`tahoe-realistic.json`. They live in a research workspace outside the repository
-(LTBC keeps it; `$O` below), regenerated by its `build_trips.py` and split with
+So `bench/points/tahoe.geojson` has no `transit` or `trpa-taz` category. The fuller point
+file with those categories lives in a research workspace outside the repository (LTBC keeps
+it; `$O` below), regenerated by its `build_trips.py` and split with
 
 ```sh
 O=path/to/od-research
-node bench/split-open.mjs pairs  $O/pairs-realistic.json --open bench/pairs/tahoe-realistic.json --restricted $O/pairs-realistic-restricted.json
 node bench/split-open.mjs points $O/points.geojson --open bench/points/tahoe.geojson --restricted $O/points-restricted.geojson
-node bench/check-pairs.mjs --region tahoe --sets realistic --pairs-file realistic=$O/pairs-realistic-restricted.json --fix
 ```
 
-Use `--pairs-file realistic=$O/pairs-realistic-restricted.json` to run the full set, and
-`--points $O/points.geojson` with the sampler for the fuller weighted file (write it with
-`--out` outside the repo). Do not commit anything derived from the restricted files. No
-usage data is used anywhere.
+Use `--points $O/points.geojson` with the sampler for the fuller weighted file (write it with
+`--out` outside the repo). Do not commit anything derived from the restricted files or from the
+raw search logs.
 
 ### Adding trips
 
@@ -443,7 +454,7 @@ Nothing in the runner, engine, tunings, metrics or report is Tahoe-specific; the
 
 The parts that are Tahoe data only:
 - The weighted point file (`bench/points/tahoe.geojson`) and the realistic pairs were built
-  by a research script outside the repository. `sample-pairs.mjs --points` works on any
+  by research scripts outside the repository, the pairs from LTBC's own search logs. `sample-pairs.mjs --points` works on any
   region's file in the same format (see `lib/points.mjs`), but there is no generator for it here.
 - Town zones (`bench/points/REGION-zones.json`) are optional. Without them, `add-trips.mjs`
   names unnamed pairs after the region.

@@ -157,7 +157,7 @@ test('catalog helpers: pair-file specs, merging external files into a set, one p
   const dir = mkdtempSync(join(tmpdir(), 'bench-pairs-'));
   const pair = id => ({ id, from: { lat: 39.1, lon: -120.1 }, to: { lat: 39.2, lon: -120.1 }, weight: 0.1 });
   const write = (name, pairs) => { const path = join(dir, name); writeFileSync(path, stringifyCatalog({ region: 'tahoe', pairs })); return path; };
-  const extension = write('ext.json', [pair('restricted-1')]), clash = write('clash.json', [pair('commute-slt-midtown-jobs-near-hard-rock-st')]), own = write('own.json', [pair('mine')]);
+  const extension = write('ext.json', [pair('restricted-1')]), clash = write('clash.json', [pair(loadPairSet('tahoe', 'realistic').pairs[0].id)]), own = write('own.json', [pair('mine')]);
   const [realistic, user] = loadCatalogs('tahoe', { sets: ['realistic'], files: [{ name: 'realistic', path: extension }, { name: 'own', path: own }] });
   assert.equal(realistic.pairs.length, loadPairSet('tahoe', 'realistic').pairs.length + 1);
   assert.deepEqual(realistic.paths.length, 2);
