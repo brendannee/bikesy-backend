@@ -35,6 +35,8 @@ export function matchMode(mode, baseModes) {
   return best;
 }
 
+const severity = p => p.error ? 99 : Math.min(p.detour ?? 0, p.firm ?? Infinity);
+
 export function buildReport(runs, baselineName) {
   const counts = new Map();
   for (const run of runs) for (const t of run.tunings) counts.set(t.name, (counts.get(t.name) ?? 0) + 1);
@@ -91,7 +93,8 @@ export function buildReport(runs, baselineName) {
   const problems = Object.entries(routes).filter(([, r]) => isPathological(r) || r.expectations.some(e => e.pass === false))
     .map(([key, r]) => ({ key, tuning: key.split('|')[0], mode: r.mode, trip: r.trip, error: r.error, detour: r.metrics.detour ?? null, firm: r.metrics.firm_detour ?? null,
       failed: r.expectations.filter(e => e.pass === false).map(e => `${e.key} ${e.limit} (got ${e.value ?? 'no route'})`) }))
-    .sort((a, b) => (b.error ? 99 : b.detour ?? 0) - (a.error ? 99 : a.detour ?? 0));
+    // Worst first: no route, then by the smaller of the two detours (see aggregates.mjs).
+    .sort((a, b) => severity(b) - severity(a));
 
   // Only ship geometry the page can show: curated trips, changed routes and problems.
   const wanted = new Set();

@@ -71,13 +71,17 @@ export function createApiSource({ url, rate_ms: rateMs = 1000, timeout_ms: timeo
     let response, body;
     try {
       response = await fetch(`${url}${url.includes('?') ? '&' : '?'}${query(from, to, scenario)}`, { signal: AbortSignal.timeout(timeoutMs) });
-      body = await response.json();
     } catch (error) {
+      // Only network failures and timeouts count towards marking the source down.
       if (++failures >= maxFailures) state.down = true;
       return { ok: false, error: `source request failed: ${error.message}`, transient: true };
     }
     failures = 0;
-    if (response.status >= 500 && !body?.error) return { ok: false, error: `HTTP ${response.status}`, transient: true };
+    try { body = await response.json(); } catch { body = null; }
+    // An HTML error page (e.g. the legacy server's 502 for a trip it cannot route) is
+    // retried on the next run rather than cached.
+    if (!body) return { ok: false, error: `HTTP ${response.status} without JSON`, transient: true };
+    if (response.status >= 500 && !body.error) return { ok: false, error: `HTTP ${response.status}`, transient: true };
     if (body.error) return { ok: false, error: body.error, ...(response.status >= 500 ? { transient: true } : {}) };
     if (!Array.isArray(body.path) || typeof body.path[0] !== 'string') return { ok: false, error: 'response has no path' };
     const points = decode(body.path[0], 5);
