@@ -42,6 +42,8 @@ for lat in range(math.floor(b['bottom']), math.floor(b['top']) + 1):
             with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as out:
                 temporary = Path(out.name)
                 out.write(payload)
+            # NamedTemporaryFile is 0600; HGT inputs are shared read-only data.
+            os.chmod(temporary, 0o644)
             os.link(temporary, destination)
         finally:
             if temporary is not None:

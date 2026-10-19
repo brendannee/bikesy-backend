@@ -11,7 +11,10 @@ For an independent account or self-contained Docker image, start with
 
 1. The canonical routing endpoint is `/route`. [api.bikesy.com](https://api.bikesy.com) is a public SF example; your deployment will have its own URL.
 2. Use the [API examples below](#api-examples) for requests, responses and compatibility details.
-3. Run source checks with Node 22.9+ and Python 3.12; there are no npm dependencies:
+3. Run source checks with Node 22.9+ and Python 3.12; there are no npm dependencies.
+   `npm run test:data` and the commands below call `python3`; on macOS the system
+   `python3` may be 3.9, so first activate a 3.12+ virtualenv (stdlib only), e.g.
+   `python3.12 -m venv .venv && . .venv/bin/activate`:
 
 ```sh
 npm test

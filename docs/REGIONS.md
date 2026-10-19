@@ -44,8 +44,9 @@ settings. Startup rejects unknown keys and names the offending key and file.
 | `engine_policy` | yes | Must be `"bikesy-distance-v1"`. | Engine release |
 
 Data manifests bind `bounds` and `admin_states`; startup rejects a mismatch with the
-packaged data. The Tahoe readiness coordinates are a Tahoe City candidate route;
-validate them against the built graph before publishing. The backend serves JSON
+packaged data. The Tahoe readiness coordinates are a Tahoe City route. They routed
+(999 m, both scenarios, with elevation) against a build of the 2026-10-12 Geofabrik
+snapshot; re-validate them against each new graph before publishing. The backend serves JSON
 APIs only; route responses include native elevation.
 
 ## Adding a region
@@ -82,6 +83,8 @@ New regions must be within the United States and drive on the right (see
    `graph/reno/` by default; `--review DIR` overrides it. Commit the reviewed files
    once approved, or keep them outside the repository and pass `--review`.
 6. **Build and package** in the pinned toolchain with `--region reno`, as below.
+   [`scripts/build-region.sh --region reno`](#one-command-build-scriptsbuild-regionsh)
+   runs steps 4–7 in order and drafts the review files for step 5 (`propose-review.py`).
 7. **Validate and release.** Build and run the image, then run
    `BIKESY_CONFIG=config/reno.json BIKESY_API_URL=... node scripts/smoke-region.mjs`.
    Use `prepare-release.py --region reno` and a separate Vercel project for the
@@ -89,9 +92,81 @@ New regions must be within the United States and drive on the right (see
 8. **Frontend.** Point the frontend's regional `BIKESY_API_URL` at the new
    deployment; the frontend needs its own region entry.
 
+## One-command build (`scripts/build-region.sh`)
+
+`scripts/build-region.sh` runs every step below in order on a Docker host and records
+per-step wall-clock times in `WORKDIR/timings.tsv` and logs in `WORKDIR/logs/`. Each
+step is skipped when its output already exists, so re-running resumes after a failure;
+`--from STEP --to STEP` selects a range of
+`preflight toolchain admin osm dem lock review build package app smoke`. It never
+pushes an image or deploys. `--region` defaults to `sf`; pass `--region tahoe` explicitly.
+
+```sh
+# Inputs: one dated Geofabrik snapshot (replace YYMMDD), e.g.
+#   https://download.geofabrik.de/north-america/us/california-YYMMDD.osm.pbf
+#   https://download.geofabrik.de/north-america/us/nevada-YYMMDD.osm.pbf
+#   https://download.geofabrik.de/north-america/us/california/norcal-YYMMDD.osm.pbf (optional)
+scripts/build-region.sh --region tahoe --workdir /abs/path/tahoe-YYYY-MM-DD \
+  --routing-pbf /abs/norcal-YYMMDD.osm.pbf --routing-pbf /abs/nevada-YYMMDD.osm.pbf \
+  --admin-pbf /abs/california-YYMMDD.osm.pbf --admin-pbf /abs/nevada-YYMMDD.osm.pbf \
+  --osm-source 'Geofabrik YYYY-MM-DD: routing norcal+nevada, admin california+nevada' \
+  --carry-forward /abs/path/previous-reviewed-review-dir   # optional
+```
+
+- `--routing-pbf` may be `california` instead of `norcal` (same result for Tahoe, larger merge).
+- `--admin-pbf` **must** be full state files. Geofabrik's `norcal` lacks 156 California
+  boundary ways and `nevada` alone lacks one Nevada border way; `california` + `nevada`
+  together contain both relations completely. `prepare-admin.py` checks this.
+- Use a Python 3.12+ interpreter for host steps (`--python`, default `.venv/bin/python`).
+- The toolchain image is tagged by the hash of `engine/Dockerfile.toolchain` and reused;
+  DEM tiles can be reused from an earlier build with `--reuse-dem OLD/data/elevation`.
+- The `review` step writes a **candidate** review (see below) and stops nothing: the
+  following `build` proves the graph gates against it, but a human must review the
+  candidate before the package is published. To build with an already reviewed
+  directory, pass `--review DIR` (its `inputs.lock.json` must match this build's inputs).
+- Measured on an Apple Silicon Mac (Docker Desktop, Rosetta, 8 CPUs/12 GiB) for Tahoe:
+  toolchain image 220 s once; admin 12 s, osm 20 s, DEM 100 s (first fetch), review 4 s,
+  gated build incl. engine compile 80 s, package 1 s, app 5 s, smoke 6 s — about 2 minutes
+  for a rerun. Downloading the 1.3 GB California file dominated (about 23 minutes).
+- Rebuilds are not byte-identical: `admin.sqlite` and some level-2 tiles differ between
+  two runs on identical inputs (policy/stair indexes and routes matched). Bind and
+  validate the package you actually built; don't expect old hashes to recur.
+- `app` generates a `--bundle-data` application context with `prepare-release.py` and
+  builds it locally; `smoke` runs it on `127.0.0.1:PORT` with full data verification
+  and runs `scripts/smoke-region.mjs`.
+
+### Drafting the review: `scripts/propose-review.py`
+
+Runs in the toolchain against the prepared `region.osm.pbf` and only automates the
+mechanical inventory:
+
+- `baseline-access-overrides.json`: `osm_motorway_mainlines` = every `highway=motorway`
+  way in the extract; `allow_motorway_ways`, `allow_directed_edges`, `walk_bicycle_ways`
+  and `deny_ways` empty (conservative motorway exclusion). `review_status` says `candidate`.
+- `quality.json`: two facility checks per admin state chosen only from unambiguous tags
+  (two-way road, a single `cycleway`/`cycleway:both` value or equal left/right values),
+  inside the service area and clearly away from the state line; `expected_walking_edges`
+  0; `minimum_bicycle_nodes` = half of an intersection count estimated from the extract.
+- `target-ways.json`, empty `baseline-graph-edges.jsonl`, and `inputs.lock.json`.
+- `WORKDIR/review-candidates.json` (outside the review directory, informational only):
+  motorway mainlines grouped by ref/name/bicycle tag with extents, motorway-class ways
+  tagged with bicycle permission, chosen and alternative facility candidates, and with
+  `--carry-forward` the mainline inventory diff against the previous review.
+
+A human decides each run: which (if any) motorway ways/segments are legally and
+practically rideable (`allow_motorway_ways` or exact `allow_directed_edges` with their
+graph records), any `deny_ways`/`walk_bicycle_ways`, whether the facility checks are
+real on the ground, and the node threshold (tighten it to about 95% of the
+`bicycle_nodes` reported in `evidence/graph-quality-gate.json` after the first build).
+With `--carry-forward`, these decisions are copied from the previous reviewed directory,
+every referenced way must still exist, and the motorway inventory is regenerated; diff
+the two directories (`diff -r OLD NEW`) and the `motorway_mainline_diff_vs_carry_forward`
+list before approving.
+
 ## Prepare geographic inputs and review
 
-Use Python 3.12+ for the acquisition/locking tools. Raw data, generated contexts and
+Use Python 3.12+ for the acquisition/locking tools (on macOS, a virtualenv: the system
+`python3` may be 3.9). Raw data, generated contexts and
 build outputs stay outside Git. Download/extract OSM separately, retaining complete
 ways and enough DEM coverage for the full extraction buffer. Examples below use
 Tahoe, which spans CA and NV; substitute your region's config and states.
@@ -102,11 +177,16 @@ A fresh data directory needs:
 - `admin-input.osm.pbf`: complete administrative polygons for the config's
   `admin_states` (`CA` for SF, `CA` and `NV` for Tahoe), optionally their US
   parent. The admin helper rejects other administrative scope. A simple small routing bbox extract is not
-  sufficient to supply complete state polygons. A full state extract containing
-  additional admin levels must be filtered before using this helper.
+  sufficient to supply complete state polygons, and neither is a sub-state extract:
+  Geofabrik's `norcal` is missing California boundary ways. Use full state files from
+  the same snapshot (Tahoe: `california` + `nevada`; each supplies border ways the other
+  lacks). `scripts/prepare-admin.py` filters the state relations, merges, and rejects
+  missing relation members (`osmium check-refs -r`).
 - `elevation/`: uncompressed HGT rasters covering the full build buffer.
 
-To merge state routing extracts (here California and Nevada), install `osmium-tool` and run:
+To merge state routing extracts (here California and Nevada), run this with `osmium-tool`
+(it is included in the toolchain image, so on macOS run it there rather than
+installing osmium on the host; `scripts/build-region.sh` does this):
 
 ```sh
 python3 scripts/prepare-osm.py --config config/tahoe.json \

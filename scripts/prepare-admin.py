@@ -34,14 +34,21 @@ with tempfile.TemporaryDirectory(dir=a.output.parent) as temporary:
         parts.append(target)
     merged = root / 'admin.osm.pbf'
     run('merge', *parts, '-o', merged)
-    run('check-refs', merged)
+    # -r also requires every relation member. Without it a clipped sub-state extract
+    # (e.g. Geofabrik norcal: 156 California boundary ways missing) passes here and
+    # only fails much later in the gated build.
+    try:
+        run('check-refs', '-r', merged, capture=True)
+    except subprocess.CalledProcessError as error:
+        p.error('Administrative relations are incomplete; supply full state extracts that together '
+                'contain every boundary member (e.g. california + nevada, not norcal):\n' + (error.stderr or ''))
     # Missing/extra/invalid polygons are also rejected by complete-regional-admin.py
     # against Valhalla's actual administrative DB during the gated build.
     with a.output.open('xb') as out, merged.open('rb') as src:
         import shutil
         shutil.copyfileobj(src, out)
 receipt = {'states': states, 'snapshot': times[0], 'source_files': {},
-           'method': 'complete ISO3166-2 state relations; tags removed on referenced objects; merge and check-refs'}
+           'method': 'complete ISO3166-2 state relations; tags removed on referenced objects; merge and check-refs -r (all relation members present)'}
 for source in a.inputs:
     with source.open('rb') as stream:
         receipt['source_files'][str(source)] = hashlib.file_digest(stream, 'sha256').hexdigest()

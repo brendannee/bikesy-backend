@@ -20,11 +20,33 @@ emulation. Inside the toolchain, run `python3 /work/scripts/preflight.py --toolc
 The Dockerfile includes Node and osmium; an older cached toolchain may not.
 Public base images are pinned, but apt packages are not frozen. Record the resulting
 toolchain digest and rerun validation rather than expecting historical engine bytes.
+(A toolchain rebuilt on 2026-10-14 did reproduce the historical engine SHA
+`82c32a12…`, but that is not guaranteed for later apt states.)
+
+`scripts/build-region.sh` (see [REGIONS.md](REGIONS.md#one-command-build-scriptsbuild-regionsh))
+runs these checks and every build step below; the commands in this document remain
+the reference for what it does.
+
+macOS / Apple Silicon notes:
+
+- Docker Desktop may install its CLI in `~/.docker/bin` without adding it to the
+  current shell's `PATH`; `preflight.py` then reports Docker as missing. Add it with
+  `export PATH="$HOME/.docker/bin:$PATH"` (or Docker Desktop's CLI setting).
+- Enable "Use Rosetta for x86_64/amd64 emulation" (Settings → General); QEMU emulation
+  is several times slower. Give Docker 8+ CPUs and 12+ GiB memory if available: the
+  minimum above is enough, but compiling the engine under emulation is the slowest step.
+- Use a Python 3.12+ virtualenv for host-side scripts; system `python3` may be 3.9.
+- osmium is not needed on the host: run the OSM/admin helpers in the toolchain image.
 
 ## Prepare and review regional inputs
 
 Follow [REGIONS.md](REGIONS.md) for extraction bounds, DEM coverage and build gates.
-Download state extracts from the same dated OSM snapshot. Prepare administrative data:
+Download state extracts from the same dated OSM snapshot (Geofabrik keeps dated files,
+e.g. `https://download.geofabrik.de/north-america/us/california-YYMMDD.osm.pbf`; check
+each against its `.md5`). The admin input needs full state files: a sub-state extract
+such as `norcal` lacks part of the California boundary. Geofabrik throttles each
+connection to about 1 MB/s, so use parallel ranged requests for the 1.3 GB California
+file. Prepare administrative data (inside the toolchain, where `/inputs` is mounted):
 
 ```sh
 python3 scripts/prepare-admin.py --config config/tahoe.json \

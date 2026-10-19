@@ -20,3 +20,6 @@ __pycache__/
 *.tar.gz
 *.zip
 *.log
+.venv/
+.claude/*.local.json
+.claude/worktrees/
