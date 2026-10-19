@@ -1,0 +1,10 @@
+{
+  "description": "Example surface modes for the upcoming engine keys (unpaved_penalty, paved_penalty pass straight through to Valhalla). Needs an engine that understands them; stock 3.5.1 ignores unknown keys.",
+  "base": "config",
+  "modes": {
+    "quiet-paved": { "facets": { "traffic": "quiet", "hills": "balanced", "surface": "paved" },
+      "options": { "use_hills": 0.5, "use_roads": 0, "maneuver_penalty": 2, "unpaved_penalty": 1 } },
+    "quiet-dirt": { "facets": { "traffic": "quiet", "hills": "balanced", "surface": "dirt" },
+      "options": { "use_hills": 0.5, "use_roads": 0, "maneuver_penalty": 2, "paved_penalty": 0.5 } }
+  }
+}

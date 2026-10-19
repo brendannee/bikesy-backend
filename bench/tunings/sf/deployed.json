@@ -1,0 +1,5 @@
+{
+  "description": "The public SF backend (api.bikesy.com), map matched locally.",
+  "source": { "type": "api", "url": "https://api.bikesy.com/route", "rate_ms": 1000 },
+  "modes_from_config": true
+}

@@ -1,0 +1,7 @@
+{
+  "region": "sf",
+  "notes": "Minimal SF catalog: the README Wiggle trip. Add pairs as needed; see bench/README.md#pair-catalogs.",
+  "pairs": [
+    {"id": "wiggle", "name": "Wiggle: Fell to Valencia", "from": {"lat": 37.77201, "lon": -122.45189}, "to": {"lat": 37.76131, "lon": -122.42157}, "tags": ["hills", "class-iii", "sanity"], "why": "The canonical SF flat route through the Wiggle; README example trip.", "expect": [{"modes": {"hills": "flat"}, "max_detour": 1.25}]}
+  ]
+}
