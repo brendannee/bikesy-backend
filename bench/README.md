@@ -12,7 +12,7 @@ single static HTML file.
 ```sh
 export BIKESY_BENCH_DIR=~/ws/ltbc/bikesy-data/bench        # runs/ and cache/ go here (default bench/out)
 export BIKESY_BENCH_IMAGE=vcr.vercel.com/tahoebike/bikesy-backend/routing-data:v1-20261012
-npm run bench -- --region tahoe                            # the production scenarios, curated + sampled pairs
+npm run bench -- --region tahoe                            # the production scenarios, curated + sampled + realistic pairs
 npm run bench -- --region tahoe --tuning config --tuning hy50 --name hill-policy
 npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/2026-10-18-hill-policy
 ```
@@ -24,7 +24,8 @@ Requirements: Node 22.9+, Docker with the region's data image pulled locally, an
 
 Runs talk to Valhalla directly, so any costing option works without a redeploy. The
 runner starts a container per distinct engine (data image + policy file), named
-`bench-<hash>`, on `127.0.0.1:18002` (`--port`), capped at 2 CPUs and 2 GB, and removes
+`bench-<hash>` (`bench-<hash>-p<port>` off the default port, so benchmarks on different ports
+never replace each other's containers), on `127.0.0.1:18002` (`--port`), capped at 2 CPUs and 2 GB, and removes
 it afterwards (`--keep-engine` leaves it running for the next run).
 
 The production entrypoint (`serve.mjs`) verifies data hashes, which an experimental
@@ -64,9 +65,28 @@ node bench/crosscheck.mjs "$BIKESY_BENCH_DIR"/runs/2026-10-18-crosscheck
 
 ## Pair catalogs
 
-`bench/pairs/REGION.json` is the curated set; `REGION-NAME.json` is another set (the
-runner uses `curated` plus `sampled` by default; `--sets` picks). Sets stay separate in
-all output so curated pairs cannot hide behaviour on the sampled ones.
+`bench/pairs/REGION.json` is the curated set; `REGION-NAME.json` is another set. The
+runner uses `curated`, `sampled`, `realistic` and `user` by default, those that exist;
+`--sets` picks. Sets stay separate in all output so curated pairs cannot hide behaviour
+on the sampled ones.
+
+| Set | File | What it is |
+| --- | --- | --- |
+| `curated` | `tahoe.json` | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
+| `sampled` | `tahoe-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
+| `realistic` | `tahoe-realistic.json` | 68 pairs built from commute flows and places people go (LODES, OSM), each with a `purpose` and a relative `weight`. See [Realistic pairs](#realistic-pairs). |
+| `sampled-weighted` | `tahoe-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
+| `user` | `tahoe-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
+
+Pairs from outside the repository join a run with `--pairs-file [NAME=]FILE` (repeatable,
+or `$BIKESY_BENCH_PAIRS` with `:`-separated entries). A file whose NAME is a set already
+loaded adds to it (ids must stay unique); otherwise it is a set of its own. Files named
+this way always run, whatever `--sets` says.
+
+```sh
+# the committed realistic pairs plus the ones kept outside git (see Realistic pairs)
+npm run bench -- --region tahoe --sets realistic --pairs-file realistic=~/ws/ltbc/bikesy-data/bench/od-research/pairs-realistic-restricted.json
+```
 
 ```json
 { "region": "tahoe", "notes": "...", "pairs": [
@@ -110,8 +130,129 @@ node bench/sample-pairs.mjs --region tahoe --pbf ~/ws/ltbc/bikesy-data/tahoe-202
 ```
 
 The same extract, seed and engine give the same file. The Tahoe set (200 pairs, seed 1)
-is about 60% Carson City and Carson Valley, which is where most of the extract's
-buildings are; use `--alpha 0` (area-weighted) or a smaller `--max-km` to shift that.
+has 64% of its origins east of the Carson Range crest (Carson City and Carson Valley,
+longitude -119.86 and beyond), which is where most of the extract's buildings are;
+`--alpha 0` (area-weighted) or a smaller `--max-km` shift that. Because the set is the
+comparison baseline of earlier runs it stays as it is; use the weighted sampler below
+for a Tahoe-wide mix.
+
+### Weighted sampling
+
+`bench/sample-pairs.mjs --points FILE` draws pairs from a point file instead of building
+density: `bench/points/tahoe.geojson` has about 7,000 weighted points in 14 categories (LODES
+homes and jobs, OSM schools, shops, food, lodging, beaches, parks, ...) and a `purposes`
+mix (recreation 0.34, commute 0.22, errands 0.18, dining and social 0.10, school 0.07,
+transit access 0.06, bike shop 0.03; the shares are assumptions, not measurements). No
+OpenStreetMap extract is needed, only the engine.
+
+```sh
+npm run bench:engine -- start --image "$BIKESY_BENCH_IMAGE" --port 18072
+node bench/sample-pairs.mjs --region tahoe --points bench/points/tahoe.geojson --valhalla http://127.0.0.1:18072/
+```
+
+Each pair: a purpose (by share), an origin and a destination category (uniformly among
+the purpose's categories), an origin zone with probability ∝ (zone mass)^`--zone-alpha`
+(default 0.5), a point in it ∝ weight^`--weight-power` (0.5), then a destination in the
+other category within `--min-km`..`--max-km` (1–15) of the origin, ∝ weight^0.5 ×
+exp(-distance / `--decay-km`) (4 km), so trips are mostly short. Winter-only points are
+skipped (`--season`). Both ends must snap within 150 m. The file records the parameters,
+the purpose mix, origin zone shares and the Carson-side share.
+
+Zones are the 30 town centres in `bench/points/tahoe-zones.json` (nearest centre within
+6 km, else `other`). Share of origins east of the Carson Range crest, by `--zone-alpha`:
+0 (every zone alike) 12%, **0.5 (default) 24%**, 1 (plain weighting by demand) 37%;
+the density-weighted `sampled` set has 64%. `purposes` whose categories are missing from
+the file (transit access, because the transit stops are not committed) are dropped and the
+shares renormalised. A fuller file, including those categories, is described under
+[Data and licenses](#data-and-licenses).
+
+`tahoe-sampled-weighted.json` is a new set rather than a regeneration of `sampled` because
+earlier runs, reports and the hill-policy comparisons are keyed to the 200 pairs of
+`sampled`; changing them would make every old baseline incomparable. Run both when a change
+should be judged on a Tahoe-wide mix as well as on the old one.
+
+### Realistic pairs
+
+`tahoe-realistic.json` is built from public data: LODES 2023 commute flows (the largest
+home-to-job flows at bikeable distance), OSM schools, supermarkets, lodging, beaches,
+parks, trailheads and bike shops, joined to residential LODES points. Every pair has a
+`purpose`, a `source`, a `straight_km` and a relative `weight` (purpose share × demand;
+weights sum to 1 over the full 92-pair file, so the committed subset sums to less).
+Aggregates add pair-weighted columns (`weighted_median_detour`, `weighted_pathological_share`)
+for sets that have weights.
+
+`bench/check-pairs.mjs` verifies every endpoint snaps to a bicycle edge within 150 m with
+`/locate` and, with `--fix`, stores the snapped points and drops pairs that do not snap
+(listed as `dropped_unsnappable`). Six of the 74 open pairs were dropped that way.
+
+```sh
+node bench/check-pairs.mjs --region tahoe --sets realistic,sampled-weighted --valhalla http://127.0.0.1:18072/
+```
+
+### Data and licenses
+
+Only data from sources that allow it is committed. `lib/open-data.mjs` holds the rule and
+`bench/split-open.mjs` applies it to the research output:
+
+| Source | Used for | Committed? |
+| --- | --- | --- |
+| US Census LEHD LODES 2023 | home and job points, commute flows | Yes; public domain. |
+| OpenStreetMap | places (schools, shops, food, lodging, beaches, parks) | Yes; ODbL, attribution "© OpenStreetMap contributors" is in the files. |
+| TRPA layers (travel-model trip ends, mobility hubs) | town-centre and hub points | No. "Copyright TRPA", public download, no licence grant. |
+| GTFS feeds (TART, TTD, Jump Around Carson) | transit stops weighted by service | No. The feeds state no licence. |
+
+So `bench/points/tahoe.geojson` has no `transit` or `trpa-taz` category, and the 18 realistic
+pairs that use transit stops or TRPA zones (17 after the snap check) are not in
+`tahoe-realistic.json`. They live in the research workspace
+(`~/ws/ltbc/bikesy-data/bench/od-research/`), regenerated by its `build_trips.py` and split with
+
+```sh
+O=~/ws/ltbc/bikesy-data/bench/od-research
+node bench/split-open.mjs pairs  $O/pairs-realistic.json --open bench/pairs/tahoe-realistic.json --restricted $O/pairs-realistic-restricted.json
+node bench/split-open.mjs points $O/points.geojson --open bench/points/tahoe.geojson --restricted $O/points-restricted.geojson
+node bench/check-pairs.mjs --region tahoe --sets realistic --pairs-file realistic=$O/pairs-realistic-restricted.json --fix
+```
+
+Use `--pairs-file realistic=$O/pairs-realistic-restricted.json` to run the full set, and
+`--points $O/points.geojson` with the sampler for the fuller weighted file (write it with
+`--out` outside the repo). Do not commit anything derived from the restricted files. No
+usage data is used anywhere.
+
+### Adding trips
+
+`bench/add-trips.mjs` turns trips people can paste or export into pairs in a local catalog,
+`bench/pairs/tahoe-user.json` (the `user` set, git-ignored). Two minutes:
+
+1. Open newmap.tahoebike.org and route the trip you care about.
+2. Copy the URL from the address bar. It looks like
+   `https://newmap.tahoebike.org/#Start/-120.14,39.17/End/-120.19,39.18/1`.
+3. Paste it as a line in any text file, optionally followed by ` # name; tags; why`:
+
+   ```
+   https://newmap.tahoebike.org/#.../1 # Tahoe City to River Ranch; class-i,recreation; Trail should beat SR 89
+   ```
+4. `node bench/add-trips.mjs mytrips.txt` (or `pbpaste | node bench/add-trips.mjs links -`).
+5. Re-run the bench on it: `npm run bench -- --region tahoe --sets user --tuning config --name my-trips`.
+
+Re-running an input adds nothing twice. Other inputs:
+
+| Command | Input |
+| --- | --- |
+| `links FILE` | Share links, one per line (`//` comments allowed). Old map.tahoebike.org links have no coordinates: re-open them on newmap, or add `--geocode`. |
+| `table FILE.csv` | Columns `name,from,to,tags,why,max_detour,one_way,added_by`, e.g. a Google Sheet downloaded as CSV. `from` and `to` take `lat,lon`, a local place name (`Safeway @ kings-beach`; the zone after `@` picks between several) or a share link. `max_detour` becomes an `expect` rule. Misspelled places list suggestions. |
+| `gpx FILE.gpx ...` | A ride as a reference route: the pair is the track's ends (200 m trimmed, rounded to ~110 m) and a simplified copy of the track, without time or elevation, goes to `refs/` beside the catalog for the `reference_overlap` metric. |
+
+Samples are in `bench/samples/add-trips/`. Options: `--snap` rounds endpoints to ~110 m,
+`--check` reports endpoints more than 150 m from a bicycle edge (needs a bench engine),
+`--out FILE` writes elsewhere (`-` prints), `--fresh` starts the catalog empty, `--tag`,
+`--places FILE` adds named points, `--geocode` looks up unknown addresses on OSM Nominatim
+(opt-in: it sends them to that service). Skipped lines are listed with the reason and the
+command exits 1.
+
+Privacy: a share link or GPX track can be someone's home. Address text from links is dropped
+unless `--keep-addresses`; unnamed pairs are named after town zones; the user catalog and its
+references are git-ignored; keep raw link lists out of repositories. To share trips,
+review the catalog, round them (`--snap`) and add the file with `git add -f`.
 
 ### Wilderness areas
 
@@ -194,8 +335,8 @@ container at a time.
 ## Runs
 
 ```
-node bench/run.mjs --region REGION [--tuning NAME ...] [--sets curated,sampled]
-    [--pairs ID,...] [--tags TAG,...] [--limit N] [--name NAME] [--out DIR]
+node bench/run.mjs --region REGION [--tuning NAME ...] [--sets curated,sampled,realistic]
+    [--pairs-file [NAME=]FILE ...] [--pairs ID,...] [--tags TAG,...] [--limit N] [--name NAME] [--out DIR]
     [--image IMAGE] [--port 18002] [--valhalla URL] [--concurrency 2] [--keep-engine]
 ```
 
@@ -247,7 +388,8 @@ Per pair set × tuning × mode, in [`aggregates.mjs`](aggregates.mjs): trips, no
 count, median and p90 detour, pathological count (no route or detour > 1.5×) and how
 many of those are also over 1.5× the shortest firm route (`pathological_firm`), total
 distance, high-stress km and share, unpaved share (by length), mean Class I share,
-median climb, wilderness km, expectations checked and pass rate, and **mode separation**
+median climb, wilderness km, expectations checked and pass rate, pair-weighted median detour
+and pathological share (for pairs with a `weight`), and **mode separation**
 (`same_route_share`: how often a mode's route is the same as another mode's, i.e. ≥ 95%
 overlap within 20 m both ways). Add one by appending to `AGGREGATES`.
 
