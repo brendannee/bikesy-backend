@@ -475,7 +475,9 @@ policy (`hy50`) plus new parameters (`packages.sweep.json`, package `rec`: quiet
 Fixed routes include busy-mode Carson City → Spooner Summit (a 109 km detour via Luther Pass,
 now 19 km on US 50), Carson City junction → Glenbrook and Brockway Summit on SR 267. Parameters alone on the shipped policy were not enough. The cost shows up in the
 same table: with false climbs gone, dirt gets cheaper (quiet unpaved 19% → 26%). One detour
-survived every setting: quiet mode's Forest Road 039 on the Spooner grade (1.6×).
+survived every setting: quiet mode's Forest Road 039 on the Spooner grade (1.6×). It is a
+trade-off, not a bug: the alternative is the four-lane US 50 grade, so the pair now expects
+US 50 only in busy and paved-preference modes.
 
 To reproduce, with the policy variants in `$BIKESY_POLICY_VARIANTS`:
 
