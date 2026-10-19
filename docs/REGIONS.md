@@ -39,7 +39,7 @@ settings. Startup rejects unknown keys and names the offending key and file.
 | `bounds` | yes | `left`, `bottom`, `right`, `top` in degrees: the OSM extraction, DEM coverage and policy-index rectangle. Tahoe uses `-120.5,38.65,-119.55,39.5`. | New data release |
 | `admin_states` | yes | Every US state the bounds touch, by postal code, each once. Complete state polygons are required for the build. | New data release |
 | `bounds_inset` | no | Inward margin in degrees for the public service area (`/bounds` and route validation). A number applies to all sides; an object sets `left`, `bottom`, `right`, `top`. Omit or use zero to serve the whole rectangle. The SF/Tahoe per-side values preserve their original service areas exactly. | App release |
-| `scenarios` | yes | Map of positive integer ids to bicycle costing options. `"1"` is required and is the default. `use_hills` and `use_roads` are 0 to 1; optional `maneuver_penalty` is nonnegative. Other keys pass through to Valhalla's bicycle costing. Ferries are always disabled. | App release |
+| `scenarios` | yes | Map of positive integer ids to bicycle costing options. `"1"` is required and is the default. `use_hills` and `use_roads` are 0 to 1; optional `maneuver_penalty` is nonnegative. Optional surface keys are validated too: `bicycle_type` (`Road`, `Cross`, `Hybrid` (the default) or `Mountain`), `avoid_bad_surfaces` (0 to 1), and `unpaved_penalty`/`paved_penalty` (0 to 10; see [Surface preference](#surface-preference)). Other keys pass through to Valhalla's bicycle costing unchecked. Ferries are always disabled. | App release |
 | `readiness` | yes | `locations` (two `{lat, lon}` inside the service area) and a configured `scenario`. Startup routes this trip and samples its elevation before listening. | App release |
 | `engine_policy` | yes | Must be `"bikesy-distance-v1"`. | Engine release |
 
@@ -48,6 +48,54 @@ packaged data. The Tahoe readiness coordinates are a Tahoe City route. They rout
 (999 m, both scenarios, with elevation) against a build of the 2026-10-12 Geofabrik
 snapshot; re-validate them against each new graph before publishing. The backend serves JSON
 APIs only; route responses include native elevation.
+
+## Surface preference
+
+The stock Valhalla surface term (`avoid_bad_surfaces`) grades surfaces in four steps
+(factors 1, 2.5, 4.5 and 7) starting at a surface that depends on `bicycle_type`. For
+the default Hybrid it starts at dirt, so compacted surfaces, which include every
+untagged footway and path, cost the same as asphalt. A scenario can instead use a
+two-class model:
+
+| Key | Range | Adds to the edge factor on |
+| --- | --- | --- |
+| `unpaved_penalty` | 0 to 10, default 0 | Unpaved edges: compacted, dirt, gravel and path surfaces (untagged paths, tracks, singletrack, `fine_gravel`, `unpaved`) |
+| `paved_penalty` | 0 to 10, default 0 | Paved edges: Valhalla's `paved_smooth`, `paved` and `paved_rough` |
+
+The edge cost is meters times a factor, `1 + (1 - use_roads) * stress`, plus the
+uphill term. When a scenario has either key, the engine adds
+`paved_penalty` or `unpaved_penalty` to that factor, in the same units as the stock
+term, and drops the stock `avoid_bad_surfaces` cost term. A penalty of 1 makes a meter
+of that class cost like two meters of the other at zero stress. Use
+`unpaved_penalty` to prefer pavement and `paved_penalty` to prefer dirt.
+
+- **Without either key, costs are bit-identical** to the engine before this option:
+  the stock surface term is unchanged, so existing scenarios (all of SF and Tahoe)
+  route exactly as before.
+- **`avoid_bad_surfaces`** has no cost effect alongside these keys, so config
+  validation accepts only 0 or 1 there. Its value 1 still forbids surfaces worse than
+  `bicycle_type` allows (compacted for Road, gravel for Cross, dirt for Hybrid).
+- **Direct, ignore hills** (`use_roads` 1 and `use_hills` 1) normally costs pure
+  meters. With a surface key, the penalty still applies (`meters * (1 + penalty)`),
+  like the stair carrying penalty, so "shortest" means shortest on the preferred
+  surface. Valhalla's explicit `shortest: true` means distance only, so validation
+  rejects it alongside these keys.
+- **Speed and time estimates** do not change; the surface still sets travel speed
+  as before.
+- **Classes come from the graph.** Valhalla takes `surface`, then `tracktype`;
+  `mtb:scale` overrides both; an untagged footway, path, sidewalk or bridleway is
+  compacted, an untagged track dirt, an untagged cycleway paved and roads paved.
+  Tag `surface` in OSM rather than tuning around a missing tag.
+- **Engine requirement.** The keys need an engine built from this repository's
+  patch. An older engine silently ignores them, so pair a config that uses them only
+  with a data image whose engine has the patch. `engine_policy` stays
+  `"bikesy-distance-v1"` because requests without the keys are unchanged.
+
+The engine links against the prebuilt `libvalhalla.a`, so it cannot add protobuf
+fields. `ParseBicycleCostOptions` stores the two values in truck-only costing option
+fields that bicycle costing and the shared `DynamicCost` base never read
+(`low_class_penalty` and `hgv_no_access_penalty`), and sets them only when a key is
+present. See the comment in `engine/src/bicyclecost.cc`.
 
 ## Adding a region
 
