@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic sample (hand-placed points along the Truckee River Trail), not a real person's ride. -->
+<gpx version="1.1" creator="ltbc-sample" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Tahoe City to River Ranch via Truckee River Trail</name><trkseg>
+    <trkpt lat="39.16860" lon="-120.14290"/>
+    <trkpt lat="39.16890" lon="-120.14450"/>
+    <trkpt lat="39.16990" lon="-120.14700"/>
+    <trkpt lat="39.17120" lon="-120.15050"/>
+    <trkpt lat="39.17260" lon="-120.15480"/>
+    <trkpt lat="39.17400" lon="-120.16000"/>
+    <trkpt lat="39.17580" lon="-120.16550"/>
+    <trkpt lat="39.17720" lon="-120.17100"/>
+    <trkpt lat="39.17900" lon="-120.17650"/>
+    <trkpt lat="39.18100" lon="-120.18200"/>
+    <trkpt lat="39.18300" lon="-120.18800"/>
+    <trkpt lat="39.18480" lon="-120.19350"/>
+    <trkpt lat="39.18640" lon="-120.19790"/>
+  </trkseg></trk>
+</gpx>

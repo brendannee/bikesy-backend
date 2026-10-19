@@ -1,0 +1,8 @@
+// One newmap.tahoebike.org share link per line. Optional note after " # ":  name; tag1,tag2; why
+// Route a trip on the map, copy the address-bar URL once the route draws, paste it here.
+// These samples use public places, not homes.
+https://newmap.tahoebike.org/#Tahoe+City+Transit+Center/-120.14348,39.16894/River+Ranch/-120.19795,39.18636/1 # Tahoe City to River Ranch; class-i,recreation; Truckee River Trail should win over SR 89
+https://newmap.tahoebike.org/#Kings+Beach+State+Recreation+Area/-120.0263,39.2363/Incline+Village+Library/-119.95745,39.2503/2 # ; commute,traffic; direct mode along SR 28
+https://newmap.tahoebike.org/#Al+Tahoe/-119.9722,38.9373/Heavenly+Village/-119.94237,38.95612/1
+https://map.tahoebike.org/#Wildwood+%26+Lake+Tahoe+Blvd/Dunlap+Dr%2C+S.+Lake+Tahoe/1 # legacy link (addresses only): skipped without --geocode
+https://newmap.tahoebike.org/#Somewhere/-121.5,38.5/Elsewhere/-120.0,39.0/1 # outside the service area: skipped

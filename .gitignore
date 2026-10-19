@@ -24,3 +24,6 @@ __pycache__/
 .claude/*.local.json
 .claude/worktrees/
 /bench/out/
+# Local trips from bench/add-trips.mjs (may identify people) and their GPX references
+/bench/pairs/*-user.json
+/bench/pairs/refs/
