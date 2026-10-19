@@ -472,8 +472,8 @@ policy (`hy50`) plus new parameters (`packages.sweep.json`, package `rec`: quiet
 | Median climb per trip | 67 m | 74 m | 63 m | 74 m |
 | Expectations passed | 16/18 | 15/18 | 9/15 | 15/15 |
 
-Fixed routes include Luther Pass (109 → 19 km), Carson City junction → Glenbrook and Brockway
-Summit on SR 267. Parameters alone on the shipped policy were not enough. The cost shows up in the
+Fixed routes include busy-mode Carson City → Spooner Summit (a 109 km detour via Luther Pass,
+now 19 km on US 50), Carson City junction → Glenbrook and Brockway Summit on SR 267. Parameters alone on the shipped policy were not enough. The cost shows up in the
 same table: with false climbs gone, dirt gets cheaper (quiet unpaved 19% → 26%). One detour
 survived every setting: quiet mode's Forest Road 039 on the Spooner grade (1.6×).
 
