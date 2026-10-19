@@ -1,0 +1,27 @@
+{
+  "description": "Sweep 4b: the recommended package under the other hill-policy variants (hy100 = dead-band 100 m, cap15 = 15% grade cap, base = shipped), to see whether the policy choice changes the recommendation.",
+  "base": "config",
+  "grid": {
+    "modes": {
+      "rec": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.75
+          }
+        }
+      }
+    },
+    "engine.policy": {
+      "base": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/base.bin",
+      "hy100": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/hy100.bin",
+      "cap15": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/cap15.bin"
+    }
+  }
+}
