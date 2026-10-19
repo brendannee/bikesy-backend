@@ -192,6 +192,38 @@ test('config validation names the offending key and file', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('surface passthrough keys are validated and reach Valhalla unchanged', () => {
+  const base = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
+  const withScenario = options => ({ ...base, scenarios: { ...base.scenarios, 3: { use_hills: 0.5, use_roads: 0, ...options } } });
+  const valid = [
+    { bicycle_type: 'Road' }, { bicycle_type: 'Mountain', avoid_bad_surfaces: 1 }, { avoid_bad_surfaces: 0.5 },
+    { unpaved_penalty: 2.5 }, { paved_penalty: 1 }, { unpaved_penalty: 0, paved_penalty: 10 },
+    { unpaved_penalty: 3, avoid_bad_surfaces: 1 }, { unpaved_penalty: 3, avoid_bad_surfaces: 0 },
+    { unpaved_penalty: 3, use_roads: 1, use_hills: 1 }, { paved_penalty: 1, shortest: false },
+  ];
+  for (const options of valid) assert.doesNotThrow(() => validateRegionConfig(withScenario(options)), JSON.stringify(options));
+  const invalid = [
+    [{ bicycle_type: 'hybrid' }, /Invalid bicycle_type in scenario 3; use one of Road, Cross, Hybrid, Mountain/],
+    [{ bicycle_type: 1 }, /bicycle_type in scenario 3/],
+    [{ avoid_bad_surfaces: 1.5 }, /Invalid avoid_bad_surfaces in scenario 3; use a number from 0 to 1/],
+    [{ avoid_bad_surfaces: '0.5' }, /avoid_bad_surfaces in scenario 3/],
+    [{ unpaved_penalty: -1 }, /Invalid unpaved_penalty in scenario 3; use a number from 0 to 10/],
+    [{ paved_penalty: 11 }, /Invalid paved_penalty in scenario 3/],
+    [{ paved_penalty: null }, /paved_penalty in scenario 3/],
+    [{ unpaved_penalty: 2, avoid_bad_surfaces: 0.25 }, /avoid_bad_surfaces in scenario 3; it has no cost effect/],
+    [{ unpaved_penalty: 2, shortest: true }, /Invalid shortest in scenario 3/],
+  ];
+  for (const [options, message] of invalid) assert.throws(() => validateRegionConfig(withScenario(options)), message);
+  // The adapter forwards scenario keys as-is; a scenario bicycle_type overrides the Hybrid default.
+  const config = validateRegionConfig(withScenario({ bicycle_type: 'Cross', unpaved_penalty: 2.5, paved_penalty: 0 }));
+  const query = new URLSearchParams('lat1=39.1&lng1=-120.39&lat2=39.11&lng2=-120.38&scenario=3');
+  assert.deepEqual(parseQuery(query, config).costing_options.bicycle, {
+    bicycle_type: 'Cross', use_hills: 0.5, use_roads: 0, unpaved_penalty: 2.5, paved_penalty: 0, use_ferry: 0,
+  });
+  assert.equal(parseQuery(new URLSearchParams('lat1=39.1&lng1=-120.39&lat2=39.11&lng2=-120.38&scenario=1'), config)
+    .costing_options.bicycle.unpaved_penalty, undefined);
+});
+
 test('DEM tile names cover the build bounds in every hemisphere', () => {
   assert.deepEqual(demTiles({ left: -120.5, bottom: 38.65, right: -119.55, top: 39.5 }),
     ['elevation/N38/N38W121.hgt', 'elevation/N38/N38W120.hgt', 'elevation/N39/N39W121.hgt', 'elevation/N39/N39W120.hgt']);

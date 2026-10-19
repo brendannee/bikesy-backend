@@ -49,6 +49,35 @@ export function deriveBounds(config) {
   return result;
 }
 
+export const BICYCLE_TYPES = ['Road', 'Cross', 'Hybrid', 'Mountain'];
+export const SURFACE_PENALTY_KEYS = ['unpaved_penalty', 'paved_penalty'];
+export const MAX_SURFACE_PENALTY = 10;
+
+// Surface-related passthrough keys. Valhalla silently replaces out-of-range values with
+// defaults, so reject them here. See docs/REGIONS.md#surface-preference.
+function validateSurfaceOptions(id, options) {
+  if (Object.hasOwn(options, 'bicycle_type') && !BICYCLE_TYPES.includes(options.bicycle_type)) {
+    throw new Error(`Invalid bicycle_type in scenario ${id}; use one of ${BICYCLE_TYPES.join(', ')}`);
+  }
+  const ranged = { avoid_bad_surfaces: 1, ...Object.fromEntries(SURFACE_PENALTY_KEYS.map(key => [key, MAX_SURFACE_PENALTY])) };
+  for (const [key, max] of Object.entries(ranged)) {
+    if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > max)) {
+      throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${max}`);
+    }
+  }
+  if (!SURFACE_PENALTY_KEYS.some(key => Object.hasOwn(options, key))) return;
+  // With either penalty the engine drops the stock avoid_bad_surfaces cost term; only its
+  // value 1 still matters (it excludes surfaces worse than the bicycle type allows).
+  if (options.avoid_bad_surfaces > 0 && options.avoid_bad_surfaces < 1) {
+    throw new Error(`Invalid avoid_bad_surfaces in scenario ${id}; it has no cost effect with unpaved_penalty/paved_penalty, so omit it or use 0 or 1`);
+  }
+  // Valhalla's explicit shortest means distance only; Bikesy's implicit shortest mode
+  // (use_roads 1 and use_hills 1) keeps surface penalties.
+  if (Object.hasOwn(options, 'shortest') && options.shortest !== false) {
+    throw new Error(`Invalid shortest in scenario ${id}; it cannot be combined with unpaved_penalty/paved_penalty`);
+  }
+}
+
 // Validate a parsed region config and return its runtime settings. Errors name the
 // offending key so a new region can be corrected without reading this code.
 export function validateRegionConfig(config) {
@@ -96,6 +125,7 @@ export function validateRegionConfig(config) {
     if (Object.hasOwn(options, 'maneuver_penalty') && (!Number.isFinite(options.maneuver_penalty) || options.maneuver_penalty < 0)) {
       throw new Error(`Invalid maneuver_penalty in scenario ${id}; use a nonnegative number`);
     }
+    validateSurfaceOptions(id, options);
   }
   const runtimeConfig = { ...config, bounds: b, dataBounds: config.bounds, region };
   readinessRequest(runtimeConfig);
