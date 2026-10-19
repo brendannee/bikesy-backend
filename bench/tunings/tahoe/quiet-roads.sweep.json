@@ -1,0 +1,13 @@
+{
+  "description": "Sweep 3: quiet-mode (scenario 1) road tolerance. use_roads x use_hills x hill-policy variant; scenario 2 is dropped. Tests whether a little road tolerance removes absurd quiet detours without adding high-stress km.",
+  "base": "config",
+  "modes": { "2": null },
+  "grid": {
+    "modes.1.options.use_roads": [0, 0.1, 0.25],
+    "options.use_hills": [0.75, 0.85, 0.95],
+    "engine.policy": {
+      "hy50": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/hy50.bin",
+      "cap15": "~/ws/ltbc/bikesy-data/experiments/hill-noise/variants/cap15.bin"
+    }
+  }
+}
