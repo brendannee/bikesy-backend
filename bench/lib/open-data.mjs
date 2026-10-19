@@ -15,6 +15,7 @@ export function isOpenSource(source) {
   return source.split(/\s\+\s/).every(part => OPEN_SOURCE.test(part.trim()) || /^LODES\b/.test(part.trim()));
 }
 
+export const OSM_ATTRIBUTION = 'Contains data from OpenStreetMap (© OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright).';
 export const OPEN_ATTRIBUTION = 'Contains data from OpenStreetMap (© OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright) '
   + 'and US Census LEHD LODES 8, 2023 (public domain).';
 

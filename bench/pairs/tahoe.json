@@ -1,6 +1,7 @@
 {
   "region": "tahoe",
   "notes": "Curated benchmark pairs. Coordinates from the 2026-10-18 OSM extract (POI centroids) unless noted. Each pair runs in both directions unless one_way is true. Expectations select modes by facets: traffic = quiet|balanced|busy, hills = flat|balanced|tolerant, surface = paved|mixed|dirt, plus mode = <mode name>; \"*\" = every mode. See bench/README.md#pair-catalogs.",
+  "attribution": "Contains data from OpenStreetMap (© OpenStreetMap contributors, ODbL 1.0, https://www.openstreetmap.org/copyright).",
   "pairs": [
     {"id":"slt-washington-ballys","name":"Washington Ave to Bally's, eastbound across South Lake","from":{"lat":38.923259,"lon":-119.999161},"to":{"lat":38.961544,"lon":-119.939331},"tags":["known-bug","traffic","hills"],"why":"TODO.md: routes up Ski Run instead of across town.","expect":[{"modes":"*","max_detour":1.3}]},
     {"id":"slt-y-stateline","name":"South Y Transit Center to Stateline Transit Center","from":{"lat":38.91307,"lon":-120.00503},"to":{"lat":38.95774,"lon":-119.94207},"tags":["commute","traffic","class-i"],"why":"Main cross-town trip: US 50 vs Lake Tahoe Blvd path, Pioneer Trail lanes, Class III streets."},
