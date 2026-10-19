@@ -14,6 +14,7 @@ import { configFacets, expandSweep, listTunings, loadTunings, resolveSpec } from
 import { expandTrips, loadPairSet, matchesModes } from '../bench/lib/catalog.mjs';
 import { hashKey, stableJson } from '../bench/lib/cache.mjs';
 import { createValhallaSource, responseHash } from '../bench/lib/sources.mjs';
+import { containerName } from '../bench/lib/engine.mjs';
 import { buildRoute, compactGeometry } from '../bench/run.mjs';
 import { matchMode } from '../bench/report.mjs';
 import { cellSampler, random } from '../bench/sample-pairs.mjs';
@@ -180,6 +181,13 @@ test('cache keys ignore key order; report matches modes by name then facets', ()
   assert.equal(matchMode({ name: '2', facets: {} }, base).name, '2');
   assert.equal(matchMode({ name: 'quiet-paved', facets: { traffic: 'quiet', surface: 'paved' } }, base).name, '1');
   assert.equal(matchMode({ name: 'x', facets: { colour: 'red' } }, base), null);
+});
+
+test('engine containers are named per identity and port', () => {
+  const identity = { key: 'image-id:policy' };
+  assert.match(containerName(identity), /^bench-[0-9a-f]{10}$/);
+  assert.equal(containerName(identity, 18002), containerName(identity));
+  assert.equal(containerName(identity, 18072), `${containerName(identity)}-p18072`);
 });
 
 test('seeded sampling is deterministic and weighted by cell', () => {

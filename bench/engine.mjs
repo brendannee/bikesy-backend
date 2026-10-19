@@ -22,7 +22,7 @@ if (command === 'start') {
     threads: Number(values.threads ?? 2) });
   console.log(`${engine.reused ? 'Reusing' : 'Started'} ${engine.name} at ${engine.url} (Valhalla ${engine.status.version})`);
 } else if (command === 'stop') {
-  const name = values.name ?? containerName(engineIdentity({ image, policy: values.policy && resolve(values.policy) }));
+  const name = values.name ?? containerName(engineIdentity({ image, policy: values.policy && resolve(values.policy) }), Number(values.port ?? 18002));
   stopEngine(name);
   console.log(`Removed ${name}`);
 } else if (command === 'status') {

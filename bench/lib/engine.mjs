@@ -27,8 +27,11 @@ export function engineIdentity({ image, policy }) {
     key: `${imageId}:${policy ? sha256File(policy) : 'image'}` };
 }
 
-export function containerName(identity) {
-  return 'bench-' + createHash('sha256').update(identity.key).digest('hex').slice(0, 10);
+// One container per engine identity and port, so runs on different ports (other people's
+// benchmarks on the same machine) never replace each other's containers.
+export const DEFAULT_PORT = 18002;
+export function containerName(identity, port = DEFAULT_PORT) {
+  return 'bench-' + createHash('sha256').update(identity.key).digest('hex').slice(0, 10) + (port === DEFAULT_PORT ? '' : `-p${port}`);
 }
 
 // Write the bench copy of the image's Valhalla config into the cache directory.
@@ -65,7 +68,7 @@ export function isRunning(name) {
 }
 
 // Start (or reuse) a container for this engine identity on 127.0.0.1:<port>.
-export async function startEngine(identity, { port = 18002, cacheDir, name = containerName(identity), threads = 2, memory = '2g', cpus = '2' } = {}) {
+export async function startEngine(identity, { port = DEFAULT_PORT, cacheDir, name = containerName(identity, port), threads = 2, memory = '2g', cpus = '2' } = {}) {
   if (!name.startsWith('bench-')) throw new Error('Bench container names must start with bench-');
   const url = `http://127.0.0.1:${port}/`;
   if (isRunning(name)) {
