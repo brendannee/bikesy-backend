@@ -41,15 +41,10 @@ The branch is local and unpushed, based on `origin/main` (0bb6477).
   - `/health` is OK;
   - `nav=1` returns a 17-step `nav_route`;
   - the legacy response is identical to production for the same trip.
-- The frontend preview calls it at `https://navtest-api.tahoebike.org/route`. That alias
-  needs a Hover DNS record, `navtest-api CNAME cname.vercel-dns.com`, and then:
-
-  ```sh
-  vercel alias set bikesy-backend-386v830hz-tahoebike.vercel.app navtest-api.tahoebike.org --scope tahoebike
-  ```
-
-  The preview URL itself is behind Vercel login, which browsers can't pass, so this alias
-  is what makes it usable.
+- Public test address: https://navtest-api.tahoebike.org (a Hover CNAME to
+  `cname.vercel-dns.com`, aliased to this preview). The frontend test site
+  https://navtest.tahoebike.org calls it. Deployment Protection is off for this project,
+  because Standard Protection also covers custom domains on preview deployments.
 
 ### Redeploying after changes
 
@@ -70,7 +65,7 @@ If production moves to a newer data image, use its digest and `$WORK` from
 
 ## Next steps
 
-1. Field-test with the frontend preview.
+1. Field-test with https://navtest.tahoebike.org/?nav=1.
 2. Open the PR on `brendannee/bikesy-backend`. The README's API section already documents
    `nav=1`.
 3. Release to Tahoe production with the release-backend skill, and add a `nav=1` check to its
