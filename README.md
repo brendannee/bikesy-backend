@@ -247,7 +247,7 @@ curl --get "$BASE_URL/route" \
 
 `BASE_URL` defaults to the production backend. Override it only when deliberately testing a local instance or a protected Preview deployment.
 
-`lat1`/`lng1` are the start and `lat2`/`lng2` are the destination, in decimal degrees. All four are required and must lie within the configured bounds. `scenario` is optional and defaults to `1` when missing or empty. The canonical route is `/route`. Compatibility aliases `/api/route`, `/`, `/api.php` and `/api.php/` accept the same query and remain supported. `HEAD` and CORS `OPTIONS` are supported. `GET /bounds` (also `/api/bounds`) returns the service area, and `GET /health` returns `{"status":"ok"}`.
+`lat1`/`lng1` are the start and `lat2`/`lng2` are the destination, in decimal degrees. All four are required and must lie within the configured bounds. `scenario` is optional and defaults to `1` when missing or empty. `nav=1` adds turn-by-turn data; see [Navigation data](#navigation-data-nav1). The canonical route is `/route`. Compatibility aliases `/api/route`, `/`, `/api.php` and `/api.php/` accept the same query and remain supported. `HEAD` and CORS `OPTIONS` are supported. `GET /bounds` (also `/api/bounds`) returns the service area, and `GET /health` returns `{"status":"ok"}`.
 
 The active Bay Area configuration maps all nine scenarios as follows:
 
@@ -313,14 +313,31 @@ HTTP **200** returned this response for the exact production URL above on Octobe
 | Field                      | Meaning                                                                                                                                                                                                                                                                    |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `directions`               | Rows of `[turn, street_name, [longitude, latitude]]`. There is no separate arrival row.                                                                                                                                                                                    |
-| `path`                     | `[encoded_polyline, encoded_levels]`. Decode the first string with precision **5** (`1e-5` degrees); decoded points are `[latitude, longitude]`. The second string contains legacy simplification levels. The API does not expose the engine's internal precision-6 shape. |
+| `path`                     | `[encoded_polyline, encoded_levels]`. Decode the first string with precision **5** (`1e-5` degrees); decoded points are `[latitude, longitude]`. The second string contains legacy simplification levels. The full-resolution shape is only in `nav=1` responses.           |
 | `total_distance`           | Route length in **meters**.                                                                                                                                                                                                                                                |
 | `elevation_profile`        | `[distance_along_route_meters, elevation_meters]` samples. Heights are DEM estimates, and sampled shape length may differ slightly from `total_distance`.                                                                                                                  |
 | `stats.route_find_time`    | Seconds spent in the upstream route phase, including a permitted ferry retry.                                                                                                                                                                                              |
-| `stats.route_desc_time`    | Seconds spent converting the route and obtaining/validating elevation.                                                                                                                                                                                                     |
+| `stats.route_desc_time`    | Seconds spent converting the route and obtaining/validating elevation, plus the navigation route with `nav=1`.                                                                                                                                                              |
 | `stats.endpoint_find_time` | Always `0`; endpoint snapping is included in the route phase.                                                                                                                                                                                                              |
 
 The `stats` values measure API processing, **not estimated cycling duration**. Queue wait is excluded from these timings but counts toward the request deadline. Optional `route_warnings` appears for walking sections, for example `[{"code":"walk_bicycle","message":"Walking sections may include stairs; dismount or carry your bicycle where required."}]`; it does not supply a stair count.
+
+### Navigation data (`nav=1`)
+
+Add `nav=1` to also receive turn-by-turn data for the same route, ready for an OSRM-format route parser such as Ferrostar's. Missing, empty or `nav=0` returns the response above unchanged; any other value returns HTTP **200** with `` {"error":"Invalid `nav`"} ``.
+
+```sh
+curl "$BASE_URL/route?lat1=38.9399&lng1=-119.9772&lat2=38.9180&lng2=-120.0050&scenario=1&nav=1"
+```
+
+Two fields follow the usual ones:
+
+| Field       | Meaning                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nav_route` | Valhalla's OSRM-format response, `{"code":"Ok","routes":[…],"waypoints":[…]}`, with `bannerInstructions` and `voiceInstructions` on each step. Geometry is an encoded polyline with precision **6**. Distances are in meters; spoken prompts use miles and feet. |
+| `points`    | The full-resolution route shape as `[latitude, longitude]` pairs, the same shape as the `nav_route` geometry.                                                                                                                                                    |
+
+The navigation route repeats the exact engine request that produced the route, including a permitted ferry retry, and runs alongside the elevation request in the same queue slot and deadline. The adapter checks that its distance and endpoints match the route; a mismatch or a failed navigation request returns HTTP **502**, and timeouts and cancellation behave as for any route. Responses are larger: about 37 kB (8 kB gzipped) instead of 6 kB for a 4 km Tahoe route, and 178 kB (45 kB gzipped) instead of 10 kB for 39 km.
 
 ### Error responses
 
