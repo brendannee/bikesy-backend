@@ -1,6 +1,6 @@
 {
   "default": "Clear bicycle access on every motorway-class or OSM motorway mainline edge except reviewed exact ways/directed edges.",
-  "review_status": "approved 2026-10-14 by LTBC (Nick Speal): all motorway mainlines and motorway_link ways stay excluded (no allow_motorway_ways); facility checks Glenshire Dr, Donner Pass Rd, Jacks Valley Rd, Tahoe Blvd confirmed; no deny_ways or walk_bicycle_ways; minimum_bicycle_nodes intentionally left at the loose generated floor",
+  "review_status": "approved 2026-10-20 by LTBC (Nick Speal): carried forward from the 2026-10-14 approval; motorway diff vs carry-forward empty; all motorway mainlines and motorway_link ways stay excluded (no allow_motorway_ways); facility checks Glenshire Dr, Donner Pass Rd, Jacks Valley Rd, Tahoe Blvd unchanged; no deny_ways or walk_bicycle_ways; minimum_bicycle_nodes intentionally left at the loose generated floor",
   "osm_motorway_mainlines": [
     4390735,
     10473201,
