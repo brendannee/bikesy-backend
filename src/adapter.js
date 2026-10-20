@@ -32,6 +32,12 @@ export function parseQuery(query, config) {
     units: 'kilometers', language: 'en-US', shape_format: 'polyline6',
   };
 }
+// `nav=1` adds turn-by-turn data; missing, empty or `0` keeps the legacy response.
+export function parseNav(query) {
+  const nav = query.get('nav') || '0';
+  if (!['0', '1'].includes(nav)) throw new ApiError('Invalid `nav`');
+  return nav === '1';
+}
 const turns = {
   7: 'continue', 8: 'continue', 9: 'slight right', 10: 'right', 11: 'sharp right',
   12: 'sharp right', 13: 'sharp left', 14: 'sharp left', 15: 'left', 16: 'slight left',
@@ -108,6 +114,17 @@ export function validateElevation(profile, sampledPoints, routePoints) {
   }
   return profile;
 }
+// The navigation route repeats the native request, so any difference is an engine fault.
+// Native length has meter resolution; allow 5 m, or 0.1% on long routes.
+export function validateNavRoute(navRoute, { points, total_distance }) {
+  const route = navRoute?.routes?.[0];
+  if (navRoute?.code !== 'Ok' || !Array.isArray(navRoute.routes) || navRoute.routes.length !== 1 ||
+      !Array.isArray(route?.legs) || route.legs.length !== 1 || !Number.isFinite(route.distance)) throw new Error('Invalid navigation route');
+  const shape = decode(route.geometry);
+  if (!shape.length || Math.abs(route.distance - total_distance) > Math.max(5, total_distance * 0.001) ||
+      [0, -1].some(index => !shape.at(index).every((n, axis) => Math.abs(n - points.at(index)[axis]) <= 0.00001))) throw new Error('Navigation route does not match');
+  return navRoute;
+}
 async function boundedJson(response, signal) {
   const limit = 8 * 1024 * 1024;
   const reader = response.body?.getReader();
@@ -177,11 +194,11 @@ export function createAdapter(config, fetchImpl = fetch) {
     return data;
   }
   return async function route(query, clientSignal) {
-    const request = parseQuery(query, config);
-    const timeout = new AbortController();
+    const request = parseQuery(query, config), nav = parseNav(query);
+    const timeout = new AbortController(), failed = new AbortController();
     const timer = setTimeout(() => timeout.abort(), config.timeoutMs);
     timer.unref();
-    const signal = clientSignal ? AbortSignal.any([timeout.signal, clientSignal]) : timeout.signal;
+    const signal = AbortSignal.any([timeout.signal, failed.signal, ...(clientSignal ? [clientSignal] : [])]);
     const deadline = performance.now() + config.timeoutMs;
     const checkDeadline = () => {
       if (performance.now() >= deadline) timeout.abort();
@@ -193,7 +210,7 @@ export function createAdapter(config, fetchImpl = fetch) {
       releaseSlot = await acquire(signal);
       checkDeadline();
       const start = performance.now();
-      let response;
+      let response, routeRequest = request;
       try {
         response = await upstream('route', request, signal);
         if (config.engine_policy === 'bikesy-distance-v1' && response.trip?.summary?.has_ferry) throw new Error('Land-only policy violated');
@@ -202,28 +219,40 @@ export function createAdapter(config, fetchImpl = fetch) {
         checkDeadline();
         // Retry only on the patched engine's conservative connectivity proof.
         // Generic no-path, snapping, timeout, limits and cancellation never reach this branch.
-        const ferryRequest = { ...request, costing_options: { bicycle: {
+        routeRequest = { ...request, costing_options: { bicycle: {
           ...request.costing_options.bicycle, use_ferry: 0.5,
         } } };
-        response = await upstream('route', ferryRequest, signal);
+        response = await upstream('route', routeRequest, signal);
       }
       const routed = performance.now();
       checkDeadline();
       const converted = convertTrip(response);
       checkDeadline();
-      const heights = await upstream('height', {
-        encoded_polyline: response.trip.legs[0].shape, shape_format: 'polyline6',
-        range: true, height_precision: 2,
-        resample_distance: Math.max(10, Math.ceil(converted.total_distance / 299)),
-      }, signal);
+      // Navigation repeats the request that produced this route, alongside elevation in the
+      // same slot. The first failure cancels the other call, so neither outlives the slot.
+      let failure;
+      const settle = work => work.catch(error => { failure ??= error; failed.abort(); });
+      const [heights, navRoute] = await Promise.all([
+        settle(upstream('height', {
+          encoded_polyline: response.trip.legs[0].shape, shape_format: 'polyline6',
+          range: true, height_precision: 2,
+          resample_distance: Math.max(10, Math.ceil(converted.total_distance / 299)),
+        }, signal)),
+        // Both regions are in the US, so prompts are spoken in miles and feet; OSRM
+        // distances stay in meters.
+        nav && settle(upstream('route', { ...routeRequest, units: 'miles', format: 'osrm',
+          banner_instructions: true, voice_instructions: true }, signal)),
+      ]);
+      if (failure) throw failure;
       const elevation_profile = validateElevation(heights.range_height, decode(heights.encoded_polyline), converted.points);
+      if (nav) validateNavRoute(navRoute, converted);
       checkDeadline();
       const { points, ...payload } = converted;
       return { ...payload, elevation_profile, stats: {
         route_find_time: (routed - start) / 1000,
         route_desc_time: (performance.now() - routed) / 1000,
         endpoint_find_time: 0, // Valhalla includes snapping in the route call.
-      } };
+      }, ...(nav ? { nav_route: navRoute, points } : {}) };
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if (clientSignal?.aborted) throw new ApiError('Request cancelled', 499);
