@@ -131,6 +131,11 @@ as a 10% grade. A minimum run spreads that error over at least 60 m.
 | 35 m band, 60 m minimum run | 7.4 M | 30.2 M | 3,209 | 13,928 | 82% |
 | 35 m band, 90 m minimum run | 6.1 M | 31.7 M | 2,042 | 8,815 | 69% |
 
+The Tahoe doubled-cost column counts at `use_hills` 0.5, the production setting, while the band
+table above counts at 0.85, the original benchmark setting. Both counts are correct for the same
+35 m band: at 0.5 the hill weight is larger, so more edges cross the doubling threshold (8,128
+against 4,789).
+
 "SF's steepest streets" are the 739 street edges in San Francisco with a true grade of 15% or
 more (47.5 km, median length 56 m). Climb in metres is unchanged by the minimum run; only the
 grade, and so the cube, is reduced.
