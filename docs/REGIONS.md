@@ -97,6 +97,26 @@ fields that bicycle costing and the shared `DynamicCost` base never read
 (`low_class_penalty` and `hgv_no_access_penalty`), and sets them only when a key is
 present. See the comment in `engine/src/bicyclecost.cc`.
 
+### Tahoe scenarios
+
+Tahoe pairs a "Traffic" select with a "Trail Surface" select, a 2 x 3 grid of scenarios.
+Scenarios 1 and 2 keep their original meaning and costing (no surface keys), so old share
+links route as before. Every scenario uses `use_hills` 0.5 and `maneuver_penalty` 2.
+
+| Scenario | Traffic | Trail Surface | `use_roads` | Surface keys |
+| --- | --- | --- | --- | --- |
+| 1 (default) | Avoid Busy Roads | Paved and Dirt | 0 | none |
+| 2 | Fastest Route | Paved and Dirt | 1 | none |
+| 3 | Avoid Busy Roads | Prefer Paved | 0 | `unpaved_penalty` 2.5 |
+| 4 | Fastest Route | Prefer Paved | 1 | `unpaved_penalty` 2.5 |
+| 5 | Avoid Busy Roads | Prefer Dirt | 0 | `paved_penalty` 1.5, `bicycle_type` Mountain |
+| 6 | Fastest Route | Prefer Dirt | 1 | `paved_penalty` 2, `bicycle_type` Mountain |
+
+The surface keys need the engine with the two-class surface preference; without it
+scenarios 3 to 6 route like 1 and 2. The penalties are starting values from the benchmark
+sweeps in `bench/tunings/tahoe/`. Dirt scenarios can pass through wilderness the OSM data
+does not mark `bicycle=no`.
+
 ## Adding a region
 
 New regions must be within the United States and drive on the right (see

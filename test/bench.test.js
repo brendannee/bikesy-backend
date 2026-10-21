@@ -140,16 +140,18 @@ test('tunings: config facets, base merge, tuning-wide options and sweeps', () =>
   assert.equal(new Set(sfFacets.map(f => `${f.traffic}/${f.hills}`)).size, 9);
   assert.deepEqual([sfFacets[0].traffic, sfFacets[0].hills, sfFacets[8].traffic, sfFacets[8].hills], ['busy', 'flat', 'quiet', 'tolerant']);
   const [config] = loadTunings('tahoe', tahoe, 'config');
-  assert.deepEqual(config.modes.map(m => [m.name, m.facets.traffic, m.options.use_roads]), [['1', 'quiet', 0], ['2', 'busy', 1]]);
+  assert.deepEqual(config.modes.map(m => [m.name, m.facets.traffic, m.facets.surface, m.options.use_roads]),
+    [['1', 'quiet', 'mixed', 0], ['2', 'busy', 'mixed', 1], ['3', 'quiet', 'paved', 0], ['4', 'busy', 'paved', 1], ['5', 'quiet', 'dirt', 0], ['6', 'busy', 'dirt', 1]]);
   const spec = { name: 't', base: 'config', options: { use_hills: 0.9, unpaved_penalty: 2 },
     modes: { '2': null, dirt: { facets: { surface: 'dirt' }, options: { use_roads: 0, paved_penalty: 0.5 } } } };
   const t = resolveSpec('tahoe', tahoe, spec);
-  assert.deepEqual(t.modes.map(m => m.name), ['1', 'dirt']);
+  assert.deepEqual(t.modes.map(m => m.name), ['1', '3', '4', '5', '6', 'dirt']);
   assert.deepEqual(t.modes[0].options, { use_hills: 0.9, use_roads: 0, maneuver_penalty: 2, unpaved_penalty: 2 });
-  assert.equal(t.modes[1].facets.mode, 'dirt');
-  assert.equal(t.modes[1].options.paved_penalty, 0.5, 'unknown engine keys pass through');
+  const dirt = t.modes.at(-1);
+  assert.equal(dirt.facets.mode, 'dirt');
+  assert.equal(dirt.options.paved_penalty, 0.5, 'unknown engine keys pass through');
   const api = resolveSpec('tahoe', tahoe, { name: 'api', source: { type: 'api', url: 'http://x/route' }, modes_from_config: true });
-  assert.deepEqual(api.modes.map(m => [m.name, m.scenario, m.options]), [['1', '1', undefined], ['2', '2', undefined]]);
+  assert.deepEqual(api.modes.map(m => [m.name, m.scenario, m.options]), ['1', '2', '3', '4', '5', '6'].map(id => [id, id, undefined]));
   const sweep = expandSweep({ base: 'config', grid: { 'options.use_hills': [0.25, 0.5], 'engine.policy': { a: '/a.bin', b: '/b.bin' } } }, 's');
   assert.deepEqual(sweep.map(s => s.name), ['s/use_hills=0.25,policy=a', 's/use_hills=0.25,policy=b', 's/use_hills=0.5,policy=a', 's/use_hills=0.5,policy=b']);
   const resolved = resolveSpec('tahoe', tahoe, sweep[3]);

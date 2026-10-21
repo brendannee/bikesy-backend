@@ -33,14 +33,26 @@ test('all SF scenarios preserve hills and facilities axes', () => {
   assert.deepEqual(parseQuery(query(), config), parseQuery(query('&scenario=1'), config));
   assert.deepEqual(parseQuery(query('&scenario='), config), parseQuery(query(), config));
 });
-test('Tahoe has only two scenarios with no hill control', () => {
+test('Tahoe has a traffic x trail surface grid of six scenarios', () => {
   const c = loadConfig({ BIKESY_CONFIG: 'config/tahoe.json' });
   const q = new URLSearchParams('lat1=39&lat2=39.1&lng1=-120&lng2=-120.1');
-  assert.equal(parseQuery(q, c).costing_options.bicycle.use_roads, 0);
-  q.set('scenario', '2');
-  assert.equal(parseQuery(q, c).costing_options.bicycle.use_roads, 1);
-  q.set('scenario', '3');
-  assert.throws(() => parseQuery(q, c), /Invalid `scenario` 3/);
+  const bicycle = scenario => { q.set('scenario', scenario); return parseQuery(q, c).costing_options.bicycle; };
+  assert.deepEqual(Object.keys(c.scenarios), ['1', '2', '3', '4', '5', '6']);
+  assert.equal(parseQuery(new URLSearchParams(q), c).costing_options.bicycle.use_roads, 0, 'scenario 1 is the default');
+  for (const [id, roads] of [['1', 0], ['2', 1], ['3', 0], ['4', 1], ['5', 0], ['6', 1]]) {
+    assert.equal(bicycle(id).use_roads, roads, `scenario ${id}`);
+    assert.equal(bicycle(id).use_hills, 0.5, `scenario ${id}`);
+  }
+  assert.equal(bicycle('3').unpaved_penalty, 2.5);
+  assert.equal(bicycle('1').paved_penalty, undefined);
+  assert.equal(bicycle('1').unpaved_penalty, undefined, 'scenarios 1 and 2 keep their pre-surface costing');
+  assert.equal(bicycle('2').unpaved_penalty, undefined);
+  assert.equal(bicycle('5').paved_penalty, 1.5);
+  assert.equal(bicycle('6').paved_penalty, 2);
+  assert.equal(bicycle('5').bicycle_type, 'Mountain');
+  assert.equal(bicycle('4').bicycle_type, 'Hybrid');
+  q.set('scenario', '7');
+  assert.throws(() => parseQuery(q, c), /Invalid `scenario` 7/);
 });
 test('validation preserves missing errors, rejects invalid numeric and scenario inputs', () => {
   assert.throws(() => parseQuery(new URLSearchParams(), config), /No `lat1` specified/);
