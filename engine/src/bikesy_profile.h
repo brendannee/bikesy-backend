@@ -6,6 +6,9 @@
 #include "bikesy_policy.h"
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <queue>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -17,6 +20,124 @@ constexpr double kHillDeadBand = 35.0;
 // Grades are never computed over a run shorter than this many metres, so a
 // few metres of DEM error between two close samples cannot produce a cliff.
 constexpr double kHillMinRun = 60.0;
+// Bridges and tunnels (docs/HILL-COST.md, "Bridges and tunnels"): the DEM reads the water, the
+// valley floor or the hill above a tunnel, not the deck, so a structure's profile is replaced by a
+// straight line. The line runs between the nodes where the whole connected structure touches
+// ordinary ground, not between each edge's own two samples: a mid-structure node (the join of two
+// bridge edges, or the end of a movable span) is itself over water.
+// An unflagged edge no longer than this joins two flagged edges as part of the same structure
+// (OSM bridge=movable spans, which the graph build does not flag, sit between bridge=yes approaches)
+constexpr double kStructureGapMaxLength = 250.0;
+// ... provided its own DEM samples average at least this far below the straightened line. A short
+// piece of ground between two bridges does not sag and is left as it is.
+constexpr double kStructureGapMinSag = 2.0;
+
+// One edge shape, for the structure pass. `a` and `b` are node indices at the shape's first and
+// last sample (hierarchy levels merged); `ha` and `hb` the DEM there; `mean_raw` the mean of all
+// raw samples; `flagged` is Valhalla's bridge or tunnel flag.
+struct StructureEdge { uint32_t a, b; double length; bool flagged; double ha, hb, mean_raw; };
+struct StructureResult {
+  std::vector<char> member, gap;                  // per edge: part of a structure; an unflagged gap edge
+  std::vector<std::pair<double, double>> ends;    // per edge: the heights to use at a and b (raw ends for non-members)
+  size_t structures = 0;                          // connected structures straightened (interior nodes and at least one ground node)
+};
+
+namespace detail {
+struct Incidence {  // CSR lists of the edges incident to each node (a loop edge is listed once)
+  std::vector<uint32_t> start, edges;
+  Incidence(const std::vector<StructureEdge>& e, uint32_t nodes) : start(nodes + 1, 0) {
+    for (const auto& x : e) { ++start[x.a + 1]; if (x.b != x.a) ++start[x.b + 1]; }
+    for (uint32_t n = 0; n < nodes; ++n) start[n + 1] += start[n];
+    edges.resize(start[nodes]); std::vector<uint32_t> fill(start.begin(), start.end() - 1);
+    for (uint32_t i = 0; i < e.size(); ++i) { edges[fill[e[i].a]++] = i; if (e[i].b != e[i].a) edges[fill[e[i].b]++] = i; }
+  }
+  template <class F> void each(uint32_t node, F f) const { for (uint32_t k = start[node]; k < start[node + 1]; ++k) f(edges[k]); }
+};
+
+// Straighten every structure (connected member edges) between its terminal nodes: a terminal is an
+// open node (data boundary) or a node with an incident non-member edge. Interior node heights are the
+// inverse-distance weighted mean of the terminals' DEM heights, with distances measured along the
+// structure (exactly linear interpolation along a simple chain); a structure without terminals keeps
+// its DEM heights. Returns the heights at a and b for every edge (raw for non-members).
+inline std::vector<std::pair<double, double>> straighten_structures(const std::vector<StructureEdge>& e, const std::vector<char>& member,
+                                                                    const Incidence& inc, const std::vector<char>& open, size_t* structures) {
+  const uint32_t nodes = inc.start.size() - 1;
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  std::vector<double> h_at(nodes, nan);
+  for (uint32_t i = 0; i < e.size(); ++i) if (member[i]) {
+    if (std::isnan(h_at[e[i].a])) h_at[e[i].a] = e[i].ha;
+    if (std::isnan(h_at[e[i].b])) h_at[e[i].b] = e[i].hb;
+  }
+  std::vector<char> terminal(nodes, 0), seen(nodes, 0);
+  for (uint32_t n = 0; n < nodes; ++n) {
+    bool any = false, all = true; inc.each(n, [&](uint32_t i) { any = true; if (!member[i]) all = false; });
+    terminal[n] = open[n] || (any && !all);
+  }
+  std::vector<double> height(h_at);
+  std::vector<uint32_t> comp, term, stack; std::vector<char> incomp(nodes, 0);
+  std::vector<double> num(nodes, 0), den(nodes, 0), dist(nodes, 0);
+  size_t count = 0;
+  for (uint32_t s0 = 0; s0 < nodes; ++s0) {
+    if (seen[s0] || terminal[s0] || std::isnan(h_at[s0])) continue;
+    comp.clear(); term.clear(); stack.assign(1, s0); seen[s0] = 1;
+    while (!stack.empty()) {
+      uint32_t u = stack.back(); stack.pop_back(); comp.push_back(u); incomp[u] = 1;
+      inc.each(u, [&](uint32_t i) { if (!member[i] || e[i].a == e[i].b) return; uint32_t v = e[i].a == u ? e[i].b : e[i].a;
+        if (terminal[v]) term.push_back(v); else if (!seen[v]) { seen[v] = 1; stack.push_back(v); } });
+    }
+    std::sort(term.begin(), term.end()); term.erase(std::unique(term.begin(), term.end()), term.end());
+    if (!term.empty()) {
+      ++count;
+      for (uint32_t v : comp) num[v] = den[v] = 0;
+      for (uint32_t t : term) {
+        // Dijkstra from t through interior nodes of this structure only (other terminals block)
+        for (uint32_t v : comp) dist[v] = std::numeric_limits<double>::infinity();
+        std::priority_queue<std::pair<double, uint32_t>, std::vector<std::pair<double, uint32_t>>, std::greater<>> pq;
+        auto relax = [&](uint32_t u, double d) { inc.each(u, [&](uint32_t i) { if (!member[i] || e[i].a == e[i].b) return;
+          uint32_t v = e[i].a == u ? e[i].b : e[i].a; if (!incomp[v]) return; double nd = d + e[i].length;
+          if (nd < dist[v]) { dist[v] = nd; pq.emplace(nd, v); } }); };
+        relax(t, 0.0);
+        while (!pq.empty()) { auto [d, u] = pq.top(); pq.pop(); if (d > dist[u]) continue; relax(u, d); }
+        for (uint32_t v : comp) if (dist[v] < std::numeric_limits<double>::infinity() && dist[v] > 0) { num[v] += h_at[t] / dist[v]; den[v] += 1.0 / dist[v]; }
+      }
+      for (uint32_t v : comp) if (den[v] > 0) height[v] = num[v] / den[v];
+    }
+    for (uint32_t v : comp) incomp[v] = 0;
+  }
+  if (structures) *structures = count;
+  std::vector<std::pair<double, double>> ends(e.size());
+  for (uint32_t i = 0; i < e.size(); ++i) ends[i] = member[i] ? std::make_pair(height[e[i].a], height[e[i].b]) : std::make_pair(e[i].ha, e[i].hb);
+  return ends;
+}
+}  // namespace detail
+
+// Which edges form structures and the heights to use at their ends. Flagged edges are members; an
+// unflagged edge of at most kStructureGapMaxLength whose both nodes touch a flagged edge is a
+// candidate gap. Structures are straightened once with the candidates, gaps whose raw samples do
+// not average kStructureGapMinSag below that line are dropped, and the rest is straightened again.
+// `open[node]` marks nodes at the data boundary (always terminals).
+inline StructureResult resolve_structures(const std::vector<StructureEdge>& e, uint32_t nodes, const std::vector<char>& open) {
+  if (open.size() != nodes) throw std::runtime_error("Invalid structure node set");
+  for (const auto& x : e) if (x.a >= nodes || x.b >= nodes || !(x.length > 0)) throw std::runtime_error("Invalid structure edge");
+  detail::Incidence inc(e, nodes);
+  StructureResult r; r.member.assign(e.size(), 0); r.gap.assign(e.size(), 0);
+  std::vector<char> touches(nodes, 0);
+  for (uint32_t i = 0; i < e.size(); ++i) if (e[i].flagged) { r.member[i] = 1; touches[e[i].a] = touches[e[i].b] = 1; }
+  for (uint32_t i = 0; i < e.size(); ++i)
+    if (!e[i].flagged && e[i].length <= kStructureGapMaxLength && e[i].a != e[i].b && touches[e[i].a] && touches[e[i].b]) r.member[i] = r.gap[i] = 1;
+  r.ends = detail::straighten_structures(e, r.member, inc, open, nullptr);
+  for (uint32_t i = 0; i < e.size(); ++i)
+    if (r.gap[i] && e[i].mean_raw - (r.ends[i].first + r.ends[i].second) / 2 > -kStructureGapMinSag) r.member[i] = r.gap[i] = 0;
+  r.ends = detail::straighten_structures(e, r.member, inc, open, &r.structures);
+  return r;
+}
+
+// The straight-line profile of a structure edge: n samples from ha to hb.
+inline std::vector<double> straight_profile(double ha, double hb, size_t n) {
+  std::vector<double> h(n);
+  for (size_t i = 0; i < n; ++i) h[i] = ha + (hb - ha) * double(i) / (n - 1);
+  return h;
+}
 
 // Indices of the profile's turning points: the first and last samples, plus
 // every extreme that the profile then leaves by at least `band` metres.
