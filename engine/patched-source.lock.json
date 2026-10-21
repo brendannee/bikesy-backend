@@ -1,9 +1,10 @@
 {
-  "src/build_policy.cc": "78305845b3f1101d3f5add30f882ed74a5bf801835b6ddea645ded897b6fe462",
+  "src/build_policy.cc": "fb9f936ac4e44eed64a7e68c97fe4c4023563c528ca67820bb1a596cd22b9f2f",
   "src/apply_access.cc": "ec38e537926006d2df4cf3207477f58fc934e4dee5daf70285ef1669cddc797f",
   "src/stair_policy.h": "b694e0c32b8543dd594f4bd318c9b9f8feb04856fd2c5eb54b51417eefec40bb",
   "src/bicyclecost.cc": "c8a3ed4fbd47bd56d7198d22e6b91f842f33d01fe248631cb15efde6a25a5194",
   "src/route_action.cc": "9d0e2de204173cc51b017a3368bbc45a563b4a9f3f4d371201d32c427d2a9624",
   "src/bikesy_policy.h": "9c3a16050783d3d7269131dc233782f2230bfa0ebc11308ec9b3f758fee0e81d",
-  "tests/validate_access.cc": "bd0a0e64d4495068105a65430139867484982f9b209a074857356427f96c44b5"
+  "tests/validate_access.cc": "bd0a0e64d4495068105a65430139867484982f9b209a074857356427f96c44b5",
+  "src/bikesy_profile.h": "ca88e14b60ec77b383533ababd299b47a2012f41d23df3aee41fa17db6306c4c"
 }

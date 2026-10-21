@@ -1,4 +1,5 @@
 #include "bikesy_policy.h"
+#include "bikesy_profile.h"
 #include "config.h"
 #include "skadi/sample.h"
 #include "midgard/util.h"
@@ -43,8 +44,8 @@ int main(int argc,char** argv){try{
      for(size_t i=1;i+1<heights.size();++i)heights[i]=heights.front()+(heights.back()-heights.front())*double(i)/(heights.size()-1);
     }
     for(double h:heights)if(!std::isfinite(h)||h<=-32768)throw std::runtime_error("Missing DEM elevation");
-    const double ds=length/(heights.size()-1);double fw=0,rev=0;
-    for(size_t i=1;i<heights.size();++i){double dh=heights[i]-heights[i-1];fw+=bikesy::positive_grade_integral(dh,ds);rev+=bikesy::positive_grade_integral(-dh,ds);++segments;}
+    // Dead-band and minimum run: see bikesy_profile.h and docs/HILL-COST.md.
+    const auto [fw,rev]=bikesy::profile_uphill(heights,length);segments+=bikesy::hill_turning_points(heights,bikesy::kHillDeadBand).size()-1;
     found=profiles.emplace(off,std::make_pair(float(fw),float(rev))).first;
    }
    uphill[entry.edges+e]=edge->forward()?found->second.first:found->second.second;
