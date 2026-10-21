@@ -565,15 +565,18 @@ flat modes ride 1.47–2.8× and climb more.
 **Other findings** (curated, `known-bug`; 524 of 600 checks pass, every failure is on one of
 these ten pairs):
 - The DEM has bathymetry under the Golden Gate Bridge (-95 m at mid-span), so bridge routes show
-  ~240 m of false climb. Flat modes loop off the bridge at Vista Point, and SF to Oakland or
+  ~240 m of false climb. `build_policy.cc` interpolates heights inside each bridge edge, but the
+  span is several edges and the edge ends in mid-span still take the DEM's sea-floor height. Flat modes loop off the bridge at Vista Point, and SF to Oakland or
   Treasure Island goes round by the Dumbarton Bridge (107–126 km) instead of the northern
   bridges (61–71 km).
 - With `use_ferry: 0` and land available, SF to Treasure Island is a 65 km ride rather than the
   4 km ferry. That is the policy working as written.
 - Alcatraz returns a mainland route to Pier 45 instead of no route: Valhalla moves an end whose
   edges fail its reachability test.
-- Millbrae cannot reach SFO, although the airport's marked bike route runs from Millbrae Ave
-  along South McDonnell Rd.
+- Millbrae BART to SFO has no route. The Millbrae end snaps to the station's indoor corridor
+  (`highway=corridor`, `access=yes`), which bikes cannot leave. With `minimum_reachability` 200
+  instead of 50 the route is 3.6 km on East Millbrae Ave and South McDonnell Rd, the airport's
+  marked bike route.
 
 To reproduce:
 
