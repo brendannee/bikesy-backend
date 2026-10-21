@@ -283,3 +283,15 @@ test('SF points and zones: open sources, transit from OSM, zones inside the serv
   assert.equal(zoneOf(37.7599, -122.4191, zones), 'sf-mission');
   assert.equal(zoneOf(37.8043, -122.2712, zones), 'oak-downtown');
 });
+
+test('SF pair sets: every endpoint inside the service area, realistic weights sum to 1', () => {
+  const { bounds: b } = loadConfig({ BIKESY_CONFIG: 'config/sf.json' });
+  const inside = e => e.lat >= b.bottom && e.lat <= b.top && e.lon >= b.left && e.lon <= b.right;
+  for (const set of ['sf', 'sf-sampled', 'sf-sampled-weighted', 'sf-realistic']) {
+    const { pairs } = JSON.parse(readFileSync(`bench/pairs/${set}.json`, 'utf8'));
+    for (const pair of pairs) for (const key of ['from', 'to', 'via']) if (pair[key]) assert.ok(inside(pair[key]), `${set} ${pair.id} ${key}`);
+  }
+  const realistic = JSON.parse(readFileSync('bench/pairs/sf-realistic.json', 'utf8'));
+  assert.ok(Math.abs(realistic.pairs.reduce((t, p) => t + p.weight, 0) - 1) < 0.001);
+  assert.ok(realistic.attribution.includes('ACS') && realistic.pairs.every(p => p.purpose === 'commute'));
+});
