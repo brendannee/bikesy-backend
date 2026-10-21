@@ -47,7 +47,10 @@ Two changes, both applied per edge in `bikesy::profile_uphill`:
    computed on the mean grade between consecutive turning points. Reversals smaller than 35 m are
    treated as noise within a steady grade. Endpoints are always kept, so an edge's net climb is
    never lost, and a real climb that rises and falls by more than 35 m inside one edge is costed in
-   both directions.
+   both directions. The filter is directional, so it runs once along each direction of travel: the
+   reverse cost is the forward cost of the reversed profile, and an edge costs the same whichever
+   way its OSM way was digitised. (A single pass shared by both directions gave different costs
+   after reversal on noisy profiles; it affects about one directed edge in 10,000.)
 2. **Minimum run (`kHillMinRun` = 60 m).** A grade is never computed over a run shorter than 60 m:
    `run = max(run, 60)`. The rise is unchanged, so short edges keep their full climb in metres, but
    a few metres of DEM error between two close samples can no longer read as a 30% grade.
@@ -91,8 +94,8 @@ units, reference climb 576 km):
 | none (previous builder) | 123.3 M | 4.3 M | 111% | 11,882 |
 | 5 m | 18.2 M | 15.2 M | 101% | 5,225 |
 | 10 m | 14.3 M | 19.2 M | 96% | 4,946 |
-| 15 m | 12.2 M | 22.6 M | 93% | 4,846 |
-| 25 m | 10.8 M | 25.7 M | 90% | 4,800 |
+| 15 m | 12.2 M | 22.5 M | 93% | 4,846 |
+| 25 m | 10.8 M | 25.8 M | 90% | 4,800 |
 | **35 m** | 10.4 M | 27.9 M | 89% | 4,789 |
 | 50 m | 9.6 M | 29.6 M | 87% | 4,786 |
 | 100 m | 8.8 M | 31.7 M | 86% | 4,782 |
@@ -127,20 +130,20 @@ as a 10% grade. A minimum run spreads that error over at least 60 m.
 
 | Filter | False cost kept, Tahoe | Real cost removed, Tahoe | Edges with doubled cost, Tahoe `use_hills` 0.5 | SF, `use_hills` 0 | Cost kept on SF's steepest streets |
 | --- | --- | --- | --- | --- | --- |
-| 35 m band | 10.4 M | 27.9 M | 8,128 | 65,981 | 96% |
-| 35 m band, 60 m minimum run | 7.4 M | 30.2 M | 3,209 | 13,928 | 82% |
-| 35 m band, 90 m minimum run | 6.1 M | 31.7 M | 2,042 | 8,815 | 69% |
+| 35 m band | 10.4 M | 27.9 M | 8,130 | 65,981 | 96% |
+| 35 m band, 60 m minimum run | 7.4 M | 30.2 M | 3,211 | 13,928 | 82% |
+| 35 m band, 90 m minimum run | 6.2 M | 31.7 M | 2,044 | 8,815 | 69% |
 
 The Tahoe doubled-cost column counts at `use_hills` 0.5, the production setting, while the band
 table above counts at 0.85, the original benchmark setting. Both counts are correct for the same
-35 m band: at 0.5 the hill weight is larger, so more edges cross the doubling threshold (8,128
+35 m band: at 0.5 the hill weight is larger, so more edges cross the doubling threshold (8,130
 against 4,789).
 
 "SF's steepest streets" are the 739 street edges in San Francisco with a true grade of 15% or
 more (47.5 km, median length 56 m). Climb in metres is unchanged by the minimum run; only the
 grade, and so the cube, is reduced.
 
-- The minimum run cuts the edges with a doubled cost by 60% in Tahoe and 80% in SF. In SF it is
+- The minimum run cuts the edges with a doubled cost by 60% in Tahoe and 79% in SF. In SF it is
   the larger part of the change: in a run on the same SF data, the band alone reduced the routes in scenario 1
   that failed or were over 1.5 times the shortest distance from 35 to 32, and adding the 60 m minimum run
   brought them to 22.
@@ -158,4 +161,5 @@ release it for a region, rebuild that region's `bikesy-policy.bin` with the new 
 release; see `docs/REGIONS.md`), then run the usual gates. The policy test runs in every
 `engine/build.sh`, and the engine cost test runs against the rebuilt file. Rebuilt with this
 builder, the 2026-10-19 Tahoe and 2026-10-20 SF graphs pass the engine cost test, and their policy
-files match the ones benchmarked above to float precision on all but two of 4.06 million edges.
+files match the ones benchmarked above to float precision on all but two of 4.06 million edges
+(both directions of one Wentworth Springs Road edge, 1.2% apart).
