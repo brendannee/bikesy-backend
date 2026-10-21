@@ -7,7 +7,9 @@
 #include <numeric>
 using namespace valhalla;using namespace valhalla::baldr;
 int main(int argc,char** argv){try{
- if(argc!=7)throw std::runtime_error("Usage: build_policy config output west south east north");
+ if(argc!=7&&argc!=8)throw std::runtime_error("Usage: build_policy config output west south east north [hill_exponent]");
+ const double hill_exponent=argc==8?std::stod(argv[7]):bikesy::kHillExponent;
+ if(!(hill_exponent>=1&&hill_exponent<=3))throw std::runtime_error("hill_exponent must be between 1 and 3");
  const auto config=valhalla::config(argv[1]);GraphReader reader(config.get_child("mjolnir"));
  std::cerr<<"reader ready\n";skadi::sample dem(config.get<std::string>("additional_data.elevation"));std::cerr<<"dem ready\n";double west=std::stod(argv[3]),south=std::stod(argv[4]),east=std::stod(argv[5]),north=std::stod(argv[6]);
  std::vector<GraphId> ids;for(auto id:reader.GetTileSet())ids.push_back(id);std::sort(ids.begin(),ids.end(),[](auto a,auto b){return a.value<b.value;});
@@ -80,7 +82,7 @@ int main(int argc,char** argv){try{
   std::vector<double> hs(heights.begin()+hoff[i],heights.begin()+hoff[i+1]);
   if(structures.member[i]){hs=bikesy::straight_profile(structures.ends[i].first,structures.ends[i].second,hs.size());++members;gaps+=structures.gap[i];}
   // Dead-band and minimum run: see bikesy_profile.h and docs/HILL-COST.md.
-  size_t profile_segments=0;const auto [fw,rev]=bikesy::profile_uphill(hs,shapes[i].length,bikesy::kHillDeadBand,bikesy::kHillMinRun,&profile_segments);segments+=profile_segments;
+  size_t profile_segments=0;const auto [fw,rev]=bikesy::profile_uphill(hs,shapes[i].length,bikesy::kHillDeadBand,bikesy::kHillMinRun,&profile_segments,hill_exponent);segments+=profile_segments;
   cost[i]={float(fw),float(rev)};
  }
  for(uint32_t e=0;e<ne;++e)if(edge_shape[e]!=UINT32_MAX)uphill[e]=edge_fwd[e]?cost[edge_shape[e]].first:cost[edge_shape[e]].second;

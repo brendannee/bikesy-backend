@@ -225,6 +225,18 @@ test('surface passthrough keys are validated and reach Valhalla unchanged', () =
     .costing_options.bicycle.unpaved_penalty, undefined);
 });
 
+test('build-time options are validated and optional', () => {
+  const tahoe = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
+  assert.doesNotThrow(() => validateRegionConfig(tahoe));
+  const { hill_cost, paved_surface_defaults, ...plain } = tahoe;
+  assert.doesNotThrow(() => validateRegionConfig(plain));
+  for (const bad of [{ exponent: 0.5 }, { exponent: 4 }, { exponent: '2' }, {}, { exponent: 2, band: 35 }, 2, null]) {
+    assert.throws(() => validateRegionConfig({ ...plain, hill_cost: bad }), /Invalid hill_cost/, JSON.stringify(bad));
+  }
+  assert.throws(() => validateRegionConfig({ ...plain, paved_surface_defaults: 'yes' }), /Invalid paved_surface_defaults/);
+  assert.doesNotThrow(() => validateRegionConfig({ ...plain, hill_cost: { exponent: 3 }, paved_surface_defaults: false }));
+});
+
 test('DEM tile names cover the build bounds in every hemisphere', () => {
   assert.deepEqual(demTiles({ left: -120.5, bottom: 38.65, right: -119.55, top: 39.5 }),
     ['elevation/N38/N38W121.hgt', 'elevation/N38/N38W120.hgt', 'elevation/N39/N39W121.hgt', 'elevation/N39/N39W120.hgt']);

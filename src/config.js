@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 export const REGION_PATTERN = /^[a-z][a-z0-9-]{0,47}$/;
 export const US_STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ');
 // Every key a region config may contain; see docs/REGIONS.md#region-config-reference.
-const CONFIG_KEYS = ['region', 'bounds', 'bounds_inset', 'admin_states', 'scenarios', 'engine_policy', 'readiness'];
+const CONFIG_KEYS = ['region', 'bounds', 'bounds_inset', 'admin_states', 'scenarios', 'engine_policy', 'readiness', 'hill_cost', 'paved_surface_defaults'];
 const SIDES = ['left', 'bottom', 'right', 'top'];
 
 // Region configs are config/*.json files with a `region` key matching the file name.
@@ -87,6 +87,19 @@ export function validateRegionConfig(config) {
   const unknown = Object.keys(config).filter(key => !CONFIG_KEYS.includes(key));
   if (unknown.length) {
     throw new Error(`Unknown config key(s) ${unknown.join(', ')}; allowed: ${CONFIG_KEYS.join(', ')}`);
+  }
+  if (Object.hasOwn(config, 'hill_cost')) {
+    // Build-time only: shapes the region's bikesy-policy.bin (docs/HILL-COST.md); routing never reads it.
+    const hill = config.hill_cost;
+    if (!hill || typeof hill !== 'object' || Array.isArray(hill) ||
+        Object.keys(hill).some(key => key !== 'exponent') ||
+        !(Number.isFinite(hill.exponent) && hill.exponent >= 1 && hill.exponent <= 3)) {
+      throw new Error('Invalid hill_cost; use {"exponent": N} with N from 1 to 3 (3 is the default)');
+    }
+  }
+  if (Object.hasOwn(config, 'paved_surface_defaults') && typeof config.paved_surface_defaults !== 'boolean') {
+    // Build-time only: import profile option (scripts/bicycle-surface-defaults.lua); routing never reads it.
+    throw new Error('Invalid paved_surface_defaults; use true or false');
   }
   if (config.engine_policy !== 'bikesy-distance-v1') {
     throw new Error('Invalid engine policy; engine_policy must be "bikesy-distance-v1"');
