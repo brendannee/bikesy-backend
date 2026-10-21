@@ -470,6 +470,81 @@ per tuning and mode with a row per pair set (trips, median route length and clim
 and p90 detour, pathological routes, stress, unpaved and Class I shares, pair-weighted
 columns), for judging a new set against the old ones.
 
+## Judging a change
+
+The bench is meant to back a routing PR: a config value, a costing option, a hill-policy
+file, an adapter change or a new data image. It shows how routes change and how much. It
+does not show whether riders prefer the new routes, so a justification combines its
+numbers with a look at the routes.
+
+### Running the comparison
+
+Run the change and the current behaviour in **one run, on one data image**. Then the only
+difference between them is the change.
+
+1. Write a tuning that holds only the change, for example
+   `bench/tunings/sf/my-change.json`:
+   ```json
+   { "description": "use_hills 0 -> 0.25 in the flat modes", "base": "config",
+     "modes": { "1": { "options": { "use_hills": 0.25 } }, "4": { "options": { "use_hills": 0.25 } },
+                "7": { "options": { "use_hills": 0.25 } } } }
+   ```
+   A hill-policy change is a tuning with `engine.policy`; several values are a sweep.
+2. Run every region the change affects, with all default sets:
+   ```sh
+   npm run bench -- --region sf --image IMAGE --tuning config --tuning my-change --name my-change
+   npm run bench -- --region tahoe --image IMAGE --tuning config --tuning my-change --name my-change
+   npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/<date>-my-change --baseline config
+   ```
+3. Review the changed routes on the report's map, starting with the most changed, and every
+   new problem route.
+
+What can't be a tuning needs a run on each side. That covers a change to `config/REGION.json`
+itself (the `config` tuning reads the checked-out file), to `src/adapter.js`, or to the
+engine binary (rebuild the image first). Run the baseline on `main` and the change on its
+branch, with the same image and different `--name`s, then pass both run directories to
+`bench:report`, the baseline run first so that `--baseline config` picks its `config`.
+Tunings that share a name show as `<run>:<tuning>`. For engine or data
+changes, also rerun the `deployed` crosscheck
+([How requests match production](#how-requests-match-production)), so you know the bench
+still reproduces production.
+
+### Reading the results
+
+- **Say which metrics should move before you run.** No single score exists. Detour, climb,
+  high-stress km, unpaved share and Class I share trade against each other. Name the target
+  metric and the guard metrics that must not get worse; a scorecard read afterwards finds
+  something good in most changes.
+- **Look at every set.** A change that helps `curated` but not `sampled` or `realistic` is
+  tuned to the hand-picked pairs. The 200-pair `sampled` sets are the fixed baselines; never
+  regenerate them to fit a change.
+- **Count trips, not percentages.** The engine is deterministic, so every difference is
+  real, but 200 pairs are a sample. Two or three fewer pathological routes is weak evidence,
+  so name the trips that changed. There are no confidence intervals.
+- **Passing a check doesn't mean the route is correct.** Many curated rules were set from
+  routes that looked sensible at the time, so passing means "no worse than then"; the
+  `known-bug` pairs mark what is known to be wrong. A change that fixes a `known-bug` pair
+  should make its rules pass; a change that breaks a passing rule needs an explanation.
+- **The metrics read the same map and elevation data as the router.** `high_stress_km`
+  depends on OSM speed and lane tags (untagged limits count as low), and `climb_m` comes from
+  the same DEM, with its noise and the sea floor under long bridges. A change can lower climb
+  by avoiding DEM artefacts rather than real hills; check the elevation profile of the
+  routes that changed most.
+- **Ground truth is thin.** Only pairs with `references` compare against ridden tracks, and
+  the realistic sets carry assumptions (Tahoe weights come from map searches, SF's from
+  commute flows only). Rider feedback on the changed routes is the best complement.
+
+### What a justification includes
+
+- The tuning or sweep file, and the commands that ran it.
+- Each run's directory name, commit and data image. `results.json` records the commit
+  (`-dirty` if the tree had uncommitted changes), the image ID, the engine hash and the data
+  file hashes under `meta.engines`. Give the image's registry digest, or the OSM snapshot it
+  was built from, so others can rebuild it.
+- The scorecard rows for the target and guard metrics, per region and per set.
+- The `known-bug` pairs that now pass, and any rule that newly fails, with the reason.
+- A short note on the most-changed routes after looking at them on the map.
+
 ## Another region
 
 Nothing in the runner, engine, tunings, metrics or report is Tahoe-specific; they read
