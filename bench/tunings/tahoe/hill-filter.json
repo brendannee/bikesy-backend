@@ -1,0 +1,5 @@
+{
+  "description": "Production scenarios with a policy file rebuilt by the hill-cost filter (35 m dead-band, 60 m minimum run; docs/HILL-COST.md). Policy files live outside Git: set BIKESY_POLICY_VARIANTS to their directory.",
+  "base": "config",
+  "engine": { "policy": "${BIKESY_POLICY_VARIANTS}/tahoe/hill-filter.bin" }
+}

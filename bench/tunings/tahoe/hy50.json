@@ -1,5 +1,5 @@
 {
-  "description": "Production scenarios with the 50 m dead-band hill policy (docs/HILL-COST.md on fix-routing-detours). Policy variants live outside Git: set BIKESY_POLICY_VARIANTS to their directory.",
+  "description": "Production scenarios with the hy50 hill policy: a 50 m dead-band without a minimum run, from the earlier tuning sweeps. The filter that was adopted (35 m band, 60 m minimum run) is described in docs/HILL-COST.md. Policy variants live outside Git: set BIKESY_POLICY_VARIANTS to their directory.",
   "base": "config",
   "engine": { "policy": "${BIKESY_POLICY_VARIANTS}/hy50.bin" }
 }
