@@ -1,0 +1,5 @@
+{
+  "description": "The deployed LTBC backend, through its public /route API (map matched locally). Keep request rates low.",
+  "source": { "type": "api", "url": "https://bikesy-backend.tahoebike.org/route", "rate_ms": 1000 },
+  "modes_from_config": true
+}

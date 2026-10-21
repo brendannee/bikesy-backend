@@ -1,0 +1,11 @@
+{
+  "description": "use_hills x hill-policy variant over the production scenarios.",
+  "base": "config",
+  "grid": {
+    "options.use_hills": [0.25, 0.5, 0.75],
+    "engine.policy": {
+      "base": "${BIKESY_POLICY_VARIANTS}/base.bin",
+      "hy50": "${BIKESY_POLICY_VARIANTS}/hy50.bin"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+name,from,to,tags,why,max_detour,one_way,added_by
+Pope Beach from the Safeway,Safeway @ slt-midtown,Pope Beach,"recreation,class-i",Pope-Baldwin path vs SR 89,,,example
+Kings Beach Safeway run,Kings Beach Elementary School,Safeway @ kings-beach,errands,Short errand on neighborhood streets,1.3,,example
+Truckee downtown to Sierra College,"39.32871,-120.18479",Sierra College,school,Commute up the hill,,yes,example
+Carson City Hall to WNC,Carson City Hall,Western Nevada College,commute,,,,
+Share link in a cell,https://newmap.tahoebike.org/#A/-120.14348%2C39.16894/B/-120.19795%2C39.18636/1,Tahoe City Community Center,recreation,,,,
+Typo test,Safewy,Pope Beach,,should list suggestions,,,

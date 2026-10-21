@@ -1,0 +1,109 @@
+{
+  "description": "Sweep 4: candidate packages (per-mode use_hills and use_roads) on the hy50 policy, to compare in one report with both modes (mode separation needs both). rec = recommended; the others vary one thing each.",
+  "base": "config",
+  "engine": {
+    "policy": "${BIKESY_POLICY_VARIANTS}/hy50.bin"
+  },
+  "grid": {
+    "modes": {
+      "rec": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.75
+          }
+        }
+      },
+      "busy-roads65": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.65
+          }
+        }
+      },
+      "quiet-hills95": {
+        "1": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.75
+          }
+        }
+      },
+      "quiet-roads25": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.25
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 0.75
+          }
+        }
+      },
+      "busy-roads100": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 1.0
+          }
+        }
+      },
+      "moderate": {
+        "1": {
+          "options": {
+            "use_hills": 0.75,
+            "use_roads": 0.1
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.75
+          }
+        }
+      },
+      "hills-only": {
+        "1": {
+          "options": {
+            "use_hills": 0.85,
+            "use_roads": 0.0
+          }
+        },
+        "2": {
+          "options": {
+            "use_hills": 0.95,
+            "use_roads": 1.0
+          }
+        }
+      }
+    }
+  }
+}

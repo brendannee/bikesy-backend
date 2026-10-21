@@ -41,6 +41,13 @@ docker run --rm --name bikesy-local --platform linux/amd64 --cpus 2 --memory 2g 
 
 Health is available at `/health`; use `/route` and `/bounds` to test the API. The Docker command above binds only to the local loopback interface. Apple Silicon uses amd64 emulation. Stop the container with Ctrl-C. For JS-only development against an already running Valhalla engine, use `npm run start:adapter` and the variables in `.env.example`.
 
+## Route benchmark
+
+[bench/](bench/README.md) compares routing tunings (costing options, hill-policy files,
+data images or deployed APIs) over curated and sampled origin/destination pairs, with
+per-route metrics (detour, climb, surface, traffic stress, wilderness), expectations and
+an HTML report. It runs the production adapter against a local engine container.
+
 ## Regional builds
 
 SF remains the default. Tahoe, and any further region, uses the same backend with separate routing data, a `config/REGION.json` file and its own release manifests. See [Regional builds](docs/REGIONS.md) for the config reference, [adding a region](docs/REGIONS.md#adding-a-region), input preparation, reviewed build gates, application image generation and frontend configuration. `BIKESY_CONFIG=./config/tahoe.json` in `.env` selects Tahoe for adapter development; production startup requires matching Tahoe data.

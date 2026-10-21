@@ -1,0 +1,13 @@
+{
+  "description": "Sweep 1: use_hills x hill-policy variant (base = shipped, hy50/hy100 = dead-band 50/100 m, cap15 = 15% grade cap) over both production scenarios. Policy variants live outside Git: set BIKESY_POLICY_VARIANTS to their directory.",
+  "base": "config",
+  "grid": {
+    "options.use_hills": [0.5, 0.65, 0.75, 0.85, 0.95],
+    "engine.policy": {
+      "base": "${BIKESY_POLICY_VARIANTS}/base.bin",
+      "hy50": "${BIKESY_POLICY_VARIANTS}/hy50.bin",
+      "hy100": "${BIKESY_POLICY_VARIANTS}/hy100.bin",
+      "cap15": "${BIKESY_POLICY_VARIANTS}/cap15.bin"
+    }
+  }
+}

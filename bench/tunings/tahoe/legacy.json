@@ -1,0 +1,5 @@
+{
+  "description": "The legacy Tahoe routing server (pre-Valhalla), map matched locally. Its scenarios 1 and 2 are assumed to mean the same as today's.",
+  "source": { "type": "api", "url": "http://ec2-52-35-131-66.us-west-2.compute.amazonaws.com/", "rate_ms": 1500 },
+  "modes_from_config": true
+}
