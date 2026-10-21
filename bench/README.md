@@ -256,7 +256,7 @@ Only data from sources that allow it is committed. `lib/open-data.mjs` holds the
 only, not the bench code. Reports and run results built from it are produced works:
 credit OpenStreetMap when you publish them. Committed sizes: `points/tahoe.geojson`
 1.2 MB (94 KB gzipped), `areas/tahoe-wilderness.geojson` 99 KB, Tahoe pair files 138 KB in all;
-`points/sf.geojson` 1.9 MB (240 KB gzipped) for a region of about 75 times the population,
+`points/sf.geojson` 1.9 MB (210 KB gzipped) for a region of about 75 times the population,
 `points/sf-zones.json` 10 KB, `areas/sf-wilderness.geojson` 97 KB, SF pair files 164 KB.
 
 So `bench/points/tahoe.geojson` has no `transit` or `trpa-taz` category. The fuller point
