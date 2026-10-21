@@ -1,6 +1,7 @@
 // Which O/D data may be committed. Pairs and points carry a `source` string; only data
 // built solely from public-domain or openly licensed inputs goes into the repository:
 //   US Census LEHD LODES   public domain
+//   US Census ACS          public domain (tract tables, e.g. B08301 means of transportation to work)
 //   OpenStreetMap          ODbL (attribute "© OpenStreetMap contributors")
 //   LTBC Tahoe Bike Map    aggregated route searches LTBC chose to publish (area-pair shares only,
 //                          no individual searches, usage coordinates or counts)
@@ -8,7 +9,7 @@
 //   TRPA data layers       "Copyright TRPA", public download, no licence grant
 //   GTFS feeds             no licence stated
 // Sources are allow-listed, so a new or unrecognised source is restricted until added here.
-const OPEN_SOURCE = /^(OpenStreetMap\b|OSM\b|US Census LEHD LODES\b|LTBC Tahoe Bike Map searches \(aggregated\))/;
+const OPEN_SOURCE = /^(OpenStreetMap\b|OSM\b|US Census LEHD LODES\b|US Census ACS\b|LTBC Tahoe Bike Map searches \(aggregated\))/;
 
 // A source string may combine inputs ("OSM supermarkets + LODES RAC", "... + TRPA ...").
 // Every part must be open; LODES alone ("LODES RAC") is open only when it names Census.

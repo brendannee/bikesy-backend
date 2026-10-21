@@ -17,10 +17,13 @@ const sum = (items, key) => items.reduce((total, item) => total + (item[key] ?? 
 
 export function splitPairs(doc) {
   const { open, restricted } = splitBySource(doc.pairs);
-  const header = (pairs, kind) => ({ region: doc.region, set: undefined,
-    notes: `${kind} subset of the realistic O/D pairs (${pairs.length} of ${doc.pairs.length}). ${doc.notes ?? ''}`.trim(),
-    purposes: doc.purposes, weight_note: 'weight is relative: weights sum to 1 over the full pair set, so this subset sums to ' + sum(pairs, 'weight').toFixed(4) + '.',
-    ...(kind === 'Open' ? { attribution: OPEN_ATTRIBUTION } : {}) });
+  // Other top-level keys (e.g. distance_mix) describe the whole set and are kept as they are.
+  const { region, notes, purposes, attribution, pairs: _, ...extra } = doc;
+  const header = (pairs, kind) => ({ region, set: undefined,
+    notes: `${kind} subset of the realistic O/D pairs (${pairs.length} of ${doc.pairs.length}). ${notes ?? ''}`.trim(),
+    ...(kind === 'Open' ? { attribution: attribution ?? OPEN_ATTRIBUTION } : {}),
+    purposes, weight_note: 'weight is relative: weights sum to 1 over the full pair set, so this subset sums to ' + sum(pairs, 'weight').toFixed(4) + '.',
+    ...extra });
   return { open: { ...header(open, 'Open'), pairs: open }, restricted: { ...header(restricted, 'Restricted'), pairs: restricted } };
 }
 
@@ -37,7 +40,7 @@ export function splitPoints(doc) {
   };
   const make = (features, kind) => {
     const names = new Set(features.map(f => f.properties.category));
-    return { type: 'FeatureCollection', notes: `${kind} subset: ${doc.notes}`, ...(kind === 'Open' ? { attribution: OPEN_ATTRIBUTION } : {}),
+    return { type: 'FeatureCollection', notes: `${kind} subset: ${doc.notes}`, ...(kind === 'Open' ? { attribution: doc.attribution ?? OPEN_ATTRIBUTION } : {}),
       bbox: doc.bbox, categories: only(features, names), purposes: doc.purposes, features: kind === 'Open' ? features.map(compact) : features };
   };
   return { open: make(open, 'Open'), restricted: make(restricted, 'Restricted'), openCategories: [...openCategories] };

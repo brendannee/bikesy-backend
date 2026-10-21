@@ -134,6 +134,11 @@ test('aggregates: quantiles, pathological routes, pass rate, mode separation', (
 test('tunings: config facets, base merge, tuning-wide options and sweeps', () => {
   assert.deepEqual(configFacets('1', tahoe.scenarios['1']), { scenario: '1', traffic: 'quiet', hills: 'balanced', surface: 'mixed' });
   assert.equal(configFacets('2', tahoe.scenarios['2']).traffic, 'busy');
+  // SF's nine scenarios are a 3 x 3 grid of use_roads (1, 0.5, 0) and use_hills (0, 0.75, 1): every facet pair once.
+  const sf = loadConfig({ BIKESY_CONFIG: 'config/sf.json' });
+  const sfFacets = Object.entries(sf.scenarios).map(([id, o]) => configFacets(id, o));
+  assert.equal(new Set(sfFacets.map(f => `${f.traffic}/${f.hills}`)).size, 9);
+  assert.deepEqual([sfFacets[0].traffic, sfFacets[0].hills, sfFacets[8].traffic, sfFacets[8].hills], ['busy', 'flat', 'quiet', 'tolerant']);
   const [config] = loadTunings('tahoe', tahoe, 'config');
   assert.deepEqual(config.modes.map(m => [m.name, m.facets.traffic, m.options.use_roads]), [['1', 'quiet', 0], ['2', 'busy', 1]]);
   const spec = { name: 't', base: 'config', options: { use_hills: 0.9, unpaved_penalty: 2 },

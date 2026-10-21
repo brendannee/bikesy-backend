@@ -100,7 +100,7 @@ async function sampleWeighted(values) {
   const missing = Object.keys(loaded.purposes).filter(name => !sampler.purposes.some(p => p.name === name));
   if (missing.length) console.warn(`Purposes without usable categories in ${values.points} (dropped, shares renormalised): ${missing.join(', ')}`);
 
-  const label = p => p.name ?? `${p.category} in ${zoneInfo.names[p.zone] ?? 'the basin area'}`;
+  const label = p => p.name ?? `${p.category} in ${zoneInfo.names[p.zone] ?? 'an outlying area'}`;
   const placeLabel = p => ({ home: `${zoneInfo.names[p.zone] ?? 'outlying'} homes`, work: `${zoneInfo.names[p.zone] ?? 'outlying'} jobs` })[p.category] ?? label(p);
   const pairs = [], purposeCount = {};
   let attempts = 0, rejected = 0;
@@ -128,9 +128,11 @@ async function sampleWeighted(values) {
   attribution,
   generator: { ...params, points_file: pointsPath.replace(/^.*\//, ''), points_sha256: sha, points: points.length, rejected_snaps: rejected,
     purposes: Object.fromEntries(sampler.purposes.map(p => [p.name, Number((p.share / sampler.purposes.reduce((t, q) => t + q.share, 0)).toFixed(3))])),
-    purpose_pairs: purposeCount, origin_zone_share: origins.share, carson_origin_share: origins.carson, carson_destination_share: destinations.carson } };
+    purpose_pairs: purposeCount, origin_zone_share: origins.share,
+    // The Carson-side share is a Tahoe statistic (see lib/points.mjs); other regions have no such split.
+    ...(region === 'tahoe' ? { carson_origin_share: origins.carson, carson_destination_share: destinations.carson } : {}) } };
   writeCatalog(out, header, pairs);
-  console.log(`Wrote ${pairs.length} pairs to ${out}; origins east of the Carson Range crest (Carson City / Valley): ${(origins.carson * 100).toFixed(0)}%`);
+  console.log(`Wrote ${pairs.length} pairs to ${out}` + (region === 'tahoe' ? `; origins east of the Carson Range crest (Carson City / Valley): ${(origins.carson * 100).toFixed(0)}%` : ''));
 }
 
 async function main() {

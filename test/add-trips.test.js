@@ -170,7 +170,8 @@ test('catalog helpers: pair-file specs, merging external files into a set, one p
 
 test('open-data rule: only OSM and LODES sources may be committed', () => {
   for (const source of ['US Census LEHD LODES 8, 2023 (public domain) OD main+aux', 'OSM lodging + OSM recreation', 'OSM supermarkets + LODES RAC',
-    'OpenStreetMap (ODbL) node/1', 'US Census LEHD LODES 8, 2023 (public domain) WAC']) assert.equal(isOpenSource(source), true, source);
+    'OpenStreetMap (ODbL) node/1', 'US Census LEHD LODES 8, 2023 (public domain) WAC',
+    'US Census LEHD LODES 8, 2023 (public domain) OD main+aux + US Census ACS 2019-2023 B08301 + OpenStreetMap places']) assert.equal(isOpenSource(source), true, source);
   for (const source of ['GTFS / TRPA mobility hubs + LODES RAC', 'TRPA TAZ trip ends + LODES RAC', 'GTFS gtfs-ttd', 'TRPA Data Downloader (maps.trpa.org)',
     'GTFS / TRPA mobility hubs + OSM beaches', 'OSM schools + TRPA TAZ', '', undefined]) assert.equal(isOpenSource(source), false, String(source));
   const { open, restricted } = splitBySource([{ source: 'OSM x' }, { source: 'TRPA y' }, {}]);
@@ -178,6 +179,8 @@ test('open-data rule: only OSM and LODES sources may be committed', () => {
   const split = splitPairs({ region: 'tahoe', notes: 'n', pairs: [{ id: 'a', source: 'OSM x', weight: 0.25 }, { id: 'b', source: 'GTFS y + OSM z', weight: 0.75 }] });
   assert.deepEqual([split.open.pairs.map(p => p.id), split.restricted.pairs.map(p => p.id)], [['a'], ['b']]);
   assert.match(split.open.weight_note, /0\.2500/);
+  const kept = splitPairs({ region: 'sf', notes: 'n', attribution: 'own', distance_mix: { a: 1 }, pairs: [{ id: 'a', source: 'OSM x', weight: 1 }] });
+  assert.deepEqual([kept.open.attribution, kept.open.distance_mix], ['own', { a: 1 }], 'the input attribution and set-level keys are kept');
   const feature = (category, source) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [-120, 39] }, properties: { category, weight: 1, source, id: `${category}-1` } });
   const points = splitPoints({ notes: 'n', categories: { home: {}, transit: {}, food: {} }, features: [feature('home', 'US Census LEHD LODES 8, 2023 (public domain) RAC'),
     feature('transit', 'GTFS gtfs-tart'), feature('food', 'OpenStreetMap (ODbL) node/42')] });
