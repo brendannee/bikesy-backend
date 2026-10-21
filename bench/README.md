@@ -2,8 +2,10 @@
 
 Evaluate routing changes over a fixed set of origin/destination pairs and compare
 tunings (costing options, hill-policy files, data images, or deployed APIs). It works
-for any region with a `config/REGION.json` (see [Another region](#another-region)), and
-[Example: Tahoe, October 2026](#example-tahoe-october-2026) shows what it is for.
+for any region with a `config/REGION.json` (see [Another region](#another-region)). Tahoe and
+SF have full pair catalogs; [Example: Tahoe, October 2026](#example-tahoe-october-2026) shows
+what it is for and [Example: SF baseline, October 2026](#example-sf-baseline-october-2026) what
+it finds in a new region.
 
 A **run** routes every trip (a pair in one direction) for every **mode** of every
 **tuning**, computes per-route **metrics** and per-mode **aggregates**, and writes a
@@ -71,13 +73,13 @@ runner uses `curated`, `sampled`, `realistic` and `user` by default, those that 
 `--sets` picks. Sets stay separate in all output so curated pairs cannot hide behaviour
 on the sampled ones.
 
-| Set | File | What it is |
-| --- | --- | --- |
-| `curated` | `tahoe.json` | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
-| `sampled` | `tahoe-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
-| `realistic` | `tahoe-realistic.json` | 71 pairs between public places, weighted by where people actually searched for routes on the Tahoe Bike Map (2019–2026), each with a `purpose`, a `share` and a relative `weight`. See [Realistic pairs](#realistic-pairs). |
-| `sampled-weighted` | `tahoe-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
-| `user` | `tahoe-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
+| Set | Tahoe | SF | What it is |
+| --- | --- | --- | --- |
+| `curated` | `tahoe.json` (40) | `sf.json` (45) | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
+| `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
+| `realistic` | `tahoe-realistic.json` (71) | `sf-realistic.json` (70) | Pairs with a `purpose`, a `share` and a relative `weight`. Tahoe: public places weighted by where people searched for routes on the Tahoe Bike Map (2019–2026). SF: commute flows from LODES and ACS. See [Realistic pairs](#realistic-pairs). |
+| `sampled-weighted` | `tahoe-sampled-weighted.json` | `sf-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
+| `user` | `tahoe-user.json` | `sf-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
 
 Pairs from outside the repository join a run with `--pairs-file [NAME=]FILE` (repeatable,
 or `$BIKESY_BENCH_PAIRS` with `:`-separated entries). A file whose NAME is a set already
@@ -137,6 +139,12 @@ longitude -119.86 and beyond), which is where most of the extract's buildings ar
 comparison baseline of earlier runs it stays as it is; use the weighted sampler below
 for a Tahoe-wide mix.
 
+The SF set uses the same defaults on the 2026-10-20 routing extract (1.78 million buildings and
+addresses in 16,453 cells). 3–13 km suits the Bay Area too. In 12 of the 200 pairs the shortest
+route is over 1.8× the straight line, as often for ridges and rural road gaps as for water
+(Tiburon to Richmond, Sausalito to the Outer Richmond, Benicia to Pinole). Snapped points must also lie inside
+the service area (`bounds` minus `bounds_inset`), since the API refuses anything outside it.
+
 ### Weighted sampling
 
 `bench/sample-pairs.mjs --points FILE` draws pairs from a point file instead of building
@@ -167,6 +175,15 @@ the file (transit access, because the transit stops are not committed) are dropp
 shares renormalised. A fuller file, including those categories, is described under
 [Data and licenses](#data-and-licenses).
 
+`bench/points/sf.geojson` has about 9,600 points in the same 14 categories, from OSM and LODES only:
+`transit` is OSM rail stations and ferry terminals, so transit access is in the mix. To keep the
+file small, homes, jobs and OSM places of one category are summed over ~1.4 km cells (the point
+is the cell's largest LODES block or heaviest named place). Its purposes lean urban (commute 0.28,
+recreation 0.24, errands 0.18, dining and social 0.10, transit access 0.10, school 0.06, bike shop
+0.04; again assumptions). The 109 zones in `sf-zones.json` are OSM towns, with San Francisco and
+Oakland split into neighbourhoods; with the default `--zone-alpha` San Francisco gets 13.5% of
+origins against its 14.4% of LODES homes, so the defaults stand.
+
 `tahoe-sampled-weighted.json` is a new set rather than a regeneration of `sampled` because
 earlier runs, reports and the hill-policy comparisons are keyed to the 200 pairs of
 `sampled`; changing them would make every old baseline incomparable. Run both when a change
@@ -192,13 +209,26 @@ records under `distance_mix`. Aggregates add pair-weighted columns (`weighted_me
 names and shares: no individual searches, usage coordinates or counts. The search logs stay
 with LTBC; `build_usage_pairs.py` in its research workspace regenerates the file.
 
+There are no search logs for SF, so `sf-realistic.json` is built from public commute data only:
+LODES 2023 home-to-work flows (1–15 km straight line, both ends in the service area) scaled by
+the home tract's share of workers who bike to work (ACS 2019–2023 B08301, shrunk toward the
+county share), summed by zone pair. The 70 busiest zone pairs get one pair each, between their
+busiest ~1 km home and work cells, each end moved to the nearest named OSM place within 0.5 km.
+Zone pairs whose shortest bicycle route is over twice the straight line are skipped: five
+East Bay to downtown SF pairs (2.1% of estimated bike commutes) whose 12–13 km becomes 55–67 km
+without a bridge that carries bikes. Weights are the zone pairs' estimated bike commutes; the
+set covers 36% of them; 43% of its weight has homes in San Francisco and 38% between Menlo Park
+and Sunnyvale. It is commute only: no recreation, errands or school.
+`build_sf.py` in LTBC's research workspace regenerates it with the points and zones.
+
 This set replaced an earlier one built from LODES commute flows and OSM places (2026-10-18).
 That set gave Carson Valley 18% of its weight against 1.6% of real searches and had no trips
 over 12 km. Weighted results from runs before the change aren't comparable with later ones.
 
 `bench/check-pairs.mjs` verifies every endpoint snaps to a bicycle edge within 150 m with
 `/locate` and, with `--fix`, stores the snapped points and drops pairs that do not snap
-(listed as `dropped_unsnappable`). All 71 pairs snap (largest snap 116 m).
+(listed as `dropped_unsnappable`). All 71 pairs snap (largest snap 116 m). Every SF set snaps; the
+largest curated snap was 125 m, after the Limantour Beach end was moved to its car park.
 
 ```sh
 node bench/check-pairs.mjs --region tahoe --sets realistic,sampled-weighted --valhalla http://127.0.0.1:18072/
@@ -211,20 +241,23 @@ Only data from sources that allow it is committed. `lib/open-data.mjs` holds the
 
 | Source | Used for | Committed? |
 | --- | --- | --- |
-| US Census LEHD LODES 2023 | home and job points (weighted sampler) | Yes; public domain. |
-| OpenStreetMap | places (schools, shops, food, lodging, beaches, parks), realistic pair endpoints | Yes; ODbL, attribution "© OpenStreetMap contributors" is in the files. |
+| US Census LEHD LODES 2023 | home and job points (weighted sampler), SF commute flows | Yes; public domain. |
+| US Census ACS 2019–2023 (B08301) | SF bike-to-work share by tract (realistic weights) | Yes; public domain. |
+| OpenStreetMap | places (schools, shops, food, lodging, beaches, parks; SF stations and ferry terminals), zones, realistic pair endpoints | Yes; ODbL, attribution "© OpenStreetMap contributors" is in the files. |
 | Tahoe Bike Map searches, 2019–2026 (LTBC) | realistic pair weights | Aggregated area-pair shares only, published by LTBC. The logs themselves are not committed. |
 | TRPA layers (travel-model trip ends, mobility hubs) | town-centre and hub points | No. "Copyright TRPA", public download, no licence grant. |
 | GTFS feeds (TART, TTD, Jump Around Carson) | transit stops weighted by service | No. The feeds state no licence. |
 
 **Licence of the committed data.** The data files under `bench/points/`, `bench/areas/` and
 `bench/pairs/` contain OpenStreetMap data, © OpenStreetMap contributors, available under the
-[Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/), and LODES data
-(public domain); the realistic pair weights come from LTBC's aggregated map searches. Each file carries an `attribution` field, which the generators
+[Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/), and LODES and ACS data
+(public domain); the Tahoe realistic pair weights come from LTBC's aggregated map searches. Each file carries an `attribution` field, which the generators
 (`sample-pairs.mjs`, `build-areas.mjs`, `split-open.mjs`) write. The ODbL covers that data
 only, not the bench code. Reports and run results built from it are produced works:
 credit OpenStreetMap when you publish them. Committed sizes: `points/tahoe.geojson`
-1.2 MB (94 KB gzipped), `areas/tahoe-wilderness.geojson` 99 KB, Tahoe pair files 138 KB in all.
+1.2 MB (94 KB gzipped), `areas/tahoe-wilderness.geojson` 99 KB, Tahoe pair files 138 KB in all;
+`points/sf.geojson` 1.9 MB (240 KB gzipped) for a region of about 75 times the population,
+`points/sf-zones.json` 10 KB, `areas/sf-wilderness.geojson` 97 KB, SF pair files 164 KB.
 
 So `bench/points/tahoe.geojson` has no `transit` or `trpa-taz` category. The fuller point
 file with those categories lives in a research workspace outside the repository (LTBC keeps
@@ -281,7 +314,8 @@ review the catalog, round them (`--snap`) and add the file with `git add -f`.
 (`boundary=protected_area` titled "Wilderness Area" or `protected_area=wilderness_preserve`),
 where bicycles are prohibited. Regenerate with
 `node bench/build-areas.mjs --region tahoe --pbf .../region.osm.pbf`. Areas only partly
-inside the extract (Mokelumne, for Tahoe) are incomplete and skipped.
+inside the extract (Mokelumne, for Tahoe) are incomplete and skipped. SF has one, the Phillip
+Burton Wilderness at Point Reyes, which the curated Limantour Beach pair exercises.
 
 ## Tunings
 
@@ -444,20 +478,27 @@ Nothing in the runner, engine, tunings, metrics or report is Tahoe-specific; the
 1. Build or pull its data image (`scripts/build-region.sh`, see `docs/REGIONS.md`) and set
    `BIKESY_BENCH_IMAGE`.
 2. Write a curated catalog, `bench/pairs/REGION.json` ([Pair catalogs](#pair-catalogs)).
-   `bench/pairs/sf.json` is a one-pair starting point. Or collect trips with
-   `add-trips.mjs --region REGION`, which reads share links from any Bikesy frontend.
+   Check path and bridge facts against OSM tags and current sources, and calibrate each `expect`
+   rule on a first run: a rule that fails on a sensible route was miscalibrated, one that fails
+   on a bad route marks a `known-bug`. Or collect trips with `add-trips.mjs --region REGION`,
+   which reads share links from any Bikesy frontend.
 3. Optionally draw a density-weighted set from the region's extract with
    `sample-pairs.mjs --region REGION --pbf ...`, and wilderness areas with `build-areas.mjs`.
+   For a weighted or realistic set, build a point file and zones from public data (see
+   [Weighted sampling](#weighted-sampling) and [Realistic pairs](#realistic-pairs)), then run
+   `check-pairs.mjs --fix` on every set.
 4. Optionally add `bench/tunings/REGION/deployed.json` (an API source) and check that the bench
    reproduces production with `crosscheck.mjs`, as `bench/tunings/sf/deployed.json` does.
 5. `npm run bench -- --region REGION`, then `npm run bench:report -- RUN_DIR`.
 
-The parts that are Tahoe data only:
-- The weighted point file (`bench/points/tahoe.geojson`) and the realistic pairs were built
-  by research scripts outside the repository, the pairs from LTBC's own search logs. `sample-pairs.mjs --points` works on any
-  region's file in the same format (see `lib/points.mjs`), but there is no generator for it here.
-- Town zones (`bench/points/REGION-zones.json`) are optional. Without them, `add-trips.mjs`
-  names unnamed pairs after the region.
+What is not in the repository:
+- The point files, zones and realistic pairs were built by research scripts outside it
+  (`build_trips.py` and `build_usage_pairs.py` for Tahoe, the latter from LTBC's own search logs;
+  `build_sf.py` for SF, from LODES, ACS and OSM). `sample-pairs.mjs --points` works on any
+  region's file in the same format (see `lib/points.mjs`).
+- Town zones (`bench/points/REGION-zones.json`) are optional for `add-trips.mjs`, which without
+  them names unnamed pairs after the region, but `sample-pairs.mjs --points` needs them.
+- The Carson-side share the weighted sampler records is a Tahoe statistic and is written only there.
 - `add-trips.mjs` defaults to `--region tahoe`.
 
 ## Example: Tahoe, October 2026
@@ -495,5 +536,51 @@ To reproduce, with the policy variants in `$BIKESY_POLICY_VARIANTS`:
 ```sh
 npm run bench -- --region tahoe --tuning config --tuning packages --sets curated,sampled --name packages
 npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/<date>-packages --baseline config
+```
+
+## Example: SF baseline, October 2026
+
+A first baseline for a second region. Data image `bikesy-sf-data:20261020` (OSM 2026-10-20),
+production's nine scenarios, curated, sampled and realistic sets (429 trips per mode).
+
+**It reproduces production.** Against api.bikesy.com, 3 curated pairs × 2 directions × 9
+scenarios: all 54 routes follow the same streets with the same distance (within 1 m). 17 are
+byte-identical. The rest differ only as newer OSM would make them: vertices a few metres apart,
+elevation within 12 cm, and in two routes one extra production maneuver at a Kezar Drive
+junction that the newer OSM no longer has.
+
+**Hill avoidance causes most detours.** Sampled set, median / p90 detour and routes over 1.5×:
+
+| | Flat (`use_hills` 0) | Balanced (0.75) | Tolerant (1) |
+| --- | --- | --- | --- |
+| Busy (`use_roads` 1) | 1.090 / 1.326, 10 | 1.049 / 1.216, 3 | 1.000 / 1.000, 0 |
+| Balanced (0.5) | 1.068 / 1.283, 8 | 1.042 / 1.154, 4 | 1.020 / 1.085, 0 |
+| Quiet (0) | 1.110 / 1.313, 7 | 1.088 / 1.236, 2 | 1.062 / 1.182, 0 |
+
+25 of the 34 pathological routes are flat-mode, and busy-tolerant is the shortest route.
+Busy-flat Orinda to Rockridge rides 36 km (2.9×) with 28 km of high-stress road to dodge the
+Berkeley hills, which cannot be dodged; uphill to the Lawrence Hall of Science and Mt Tam the
+flat modes ride 1.47–2.8× and climb more.
+
+**Other findings** (curated, `known-bug`; 524 of 600 checks pass, every failure is on one of
+these ten pairs):
+- The DEM has bathymetry under the Golden Gate Bridge (-95 m at mid-span), so bridge routes show
+  ~240 m of false climb. Flat modes loop off the bridge at Vista Point, and SF to Oakland or
+  Treasure Island goes round by the Dumbarton Bridge (107–126 km) instead of the northern
+  bridges (61–71 km).
+- With `use_ferry: 0` and land available, SF to Treasure Island is a 65 km ride rather than the
+  4 km ferry. That is the policy working as written.
+- Alcatraz returns a mainland route to Pier 45 instead of no route: Valhalla moves an end whose
+  edges fail its reachability test.
+- Millbrae cannot reach SFO, although the airport's marked bike route runs from Millbrae Ave
+  along South McDonnell Rd.
+
+To reproduce:
+
+```sh
+npm run bench -- --region sf --image bikesy-sf-data:latest --name sf-baseline
+node bench/run.mjs --region sf --image bikesy-sf-data:latest --tuning config --tuning deployed --sets curated --limit 3 --name sf-crosscheck
+node bench/crosscheck.mjs "$BIKESY_BENCH_DIR"/runs/<date>-sf-crosscheck
+npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/<date>-sf-baseline
 ```
 
