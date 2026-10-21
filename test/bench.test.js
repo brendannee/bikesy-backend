@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { loadConfig, listRegionConfigs } from '../src/config.js';
 import { encode } from '../src/polyline.js';
 import { coverage, densify, haversine, insideAny, lineLength, parseGpx, preparePolygons, similarity, simplify } from '../bench/lib/geo.mjs';
-import { climb, computeMetrics, isClassI, isHighStress, isUnpaved, kmInside, stressClass } from '../bench/metrics.mjs';
+import { METRICS, climb, computeMetrics, isClassI, isHighStress, isUnpaved, kmInside, stressClass } from '../bench/metrics.mjs';
 import { evaluateExpectations } from '../bench/expectations.mjs';
 import { computeAggregates, quantile } from '../bench/aggregates.mjs';
 import { configFacets, expandPath, expandSweep, listTunings, loadTunings, resolveSpec } from '../bench/lib/tunings.mjs';
@@ -179,8 +179,10 @@ test('checked-in pair catalogs and tunings load for every region', () => {
       for (const p of catalog.pairs) for (const point of [p.from, p.to, p.via].filter(Boolean)) {
         assert.ok(point.lat > b.bottom && point.lat < b.top && point.lon > b.left && point.lon < b.right, `${file} ${p.id} outside service bounds`);
       }
+      // Every metric name is known (a misspelled one throws); "*" entries are the ones evaluated here.
+      const metrics = Object.fromEntries(METRICS.map(m => [m.name, 1]));
       for (const trip of expandTrips(catalog)) for (const e of trip.pair.expect ?? []) {
-        evaluateExpectations({ ...trip, pair: { ...trip.pair, expect: [e] } }, { facets: { mode: 'x' } }, { metrics: { detour: 1 } });
+        evaluateExpectations({ ...trip, pair: { ...trip.pair, expect: [e] } }, { facets: { mode: 'x' } }, { metrics });
       }
     }
     assert.ok(config.region === region);
