@@ -562,8 +562,8 @@ Busy-flat Orinda to Rockridge rides 36 km (2.9×) with 28 km of high-stress road
 Berkeley hills, which cannot be dodged; uphill to the Lawrence Hall of Science and Mt Tam the
 flat modes ride 1.47–2.8× and climb more.
 
-**Other findings** (curated, `known-bug`; 524 of 600 checks pass, every failure is on one of
-these ten pairs):
+**Other findings** (curated, `known-bug`; 560 of 600 checks pass, every failure is on one of
+these eight pairs):
 - The DEM has bathymetry under the Golden Gate Bridge (-95 m at mid-span), so bridge routes show
   ~240 m of false climb. `build_policy.cc` interpolates heights inside each bridge edge, but the
   span is several edges and the edge ends in mid-span still take the DEM's sea-floor height. Flat modes loop off the bridge at Vista Point, and SF to Oakland or
@@ -571,12 +571,11 @@ these ten pairs):
   bridges (61–71 km).
 - With `use_ferry: 0` and land available, SF to Treasure Island is a 65 km ride rather than the
   4 km ferry. That is the policy working as written.
-- Alcatraz returns a mainland route to Pier 45 instead of no route: Valhalla moves an end whose
-  edges fail its reachability test.
-- Millbrae BART to SFO has no route. The Millbrae end snaps to the station's indoor corridor
-  (`highway=corridor`, `access=yes`), which bikes cannot leave. With `minimum_reachability` 200
-  instead of 50 the route is 3.6 km on East Millbrae Ave and South McDonnell Rd, the airport's
-  marked bike route.
+- Points the router can't reach are moved without notice. Alcatraz (no bike access) is routed to
+  Pier 45, the nearest bikeable point, which is a fair fallback. A pin dropped on the Millbrae
+  station building snaps to its indoor corridor, which bikes cannot leave, and gets no route;
+  searching for the station puts the point at the parking garage, which routes fine (3.4 km to
+  SFO on South McDonnell Rd). Neither is a `known-bug`.
 
 To reproduce:
 
