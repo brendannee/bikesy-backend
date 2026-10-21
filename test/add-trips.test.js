@@ -267,3 +267,19 @@ test('set summary: per-set rows, combined sets and a markdown table', () => {
   assert.match(text, /\| a \| 2 \| 4\.0 /);
   assert.match(text, /\| ab \| 4 \|/);
 });
+
+test('SF points and zones: open sources, transit from OSM, zones inside the service area', () => {
+  const sf = loadConfig({ BIKESY_CONFIG: 'config/sf.json' });
+  const points = loadPoints('bench/points/sf.geojson');
+  const zones = loadZones('bench/points/sf-zones.json');
+  assert.ok(points.doc.attribution.includes('OpenStreetMap') && points.doc.attribution.includes('LODES'));
+  assert.ok(points.points.length > 5000 && points.points.every(p => !('source' in p)));
+  const categories = new Set(points.points.map(p => p.category));
+  for (const c of ['home', 'work', 'transit', 'school', 'park']) assert.ok(categories.has(c), c);
+  for (const [name, spec] of Object.entries(points.purposes)) assert.ok(spec.from.every(c => categories.has(c)) && spec.to.every(c => categories.has(c)), name);
+  assert.equal(new Set(zones.zones.map(z => z.id)).size, zones.zones.length);
+  const b = sf.bounds;
+  assert.ok(zones.zones.every(z => z.lat > b.bottom && z.lat < b.top && z.lon > b.left && z.lon < b.right));
+  assert.equal(zoneOf(37.7599, -122.4191, zones), 'sf-mission');
+  assert.equal(zoneOf(37.8043, -122.2712, zones), 'oak-downtown');
+});
