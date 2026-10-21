@@ -44,10 +44,11 @@ test('Tahoe has a traffic x trail surface grid of six scenarios', () => {
     assert.equal(bicycle(id).use_hills, 0.5, `scenario ${id}`);
   }
   assert.equal(bicycle('3').unpaved_penalty, 2.5);
+  assert.equal(bicycle('4').unpaved_penalty, 1.5);
   assert.equal(bicycle('1').paved_penalty, undefined);
-  assert.equal(bicycle('1').unpaved_penalty, undefined, 'scenarios 1 and 2 keep their pre-surface costing');
-  assert.equal(bicycle('2').unpaved_penalty, undefined);
-  assert.equal(bicycle('5').paved_penalty, 1.5);
+  assert.equal(bicycle('1').unpaved_penalty, 1, 'default scenarios treat all unpaved surfaces alike');
+  assert.equal(bicycle('2').unpaved_penalty, 1);
+  assert.equal(bicycle('5').paved_penalty, 2);
   assert.equal(bicycle('6').paved_penalty, 2);
   assert.equal(bicycle('5').bicycle_type, 'Mountain');
   assert.equal(bicycle('4').bicycle_type, 'Hybrid');

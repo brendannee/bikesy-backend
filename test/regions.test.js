@@ -237,6 +237,15 @@ test('build-time options are validated and optional', () => {
   assert.doesNotThrow(() => validateRegionConfig({ ...plain, hill_cost: { exponent: 3 }, paved_surface_defaults: false }));
 });
 
+test('Tahoe sets the build-time options and SF omits them', () => {
+  const tahoe = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
+  const sf = JSON.parse(readFileSync(new URL('../config/sf.json', import.meta.url)));
+  assert.deepEqual(tahoe.hill_cost, { exponent: 2 });
+  assert.equal(tahoe.paved_surface_defaults, true);
+  assert.equal(Object.hasOwn(sf, 'hill_cost'), false, 'SF keeps the original cubic hill cost');
+  assert.equal(Object.hasOwn(sf, 'paved_surface_defaults'), false, 'SF keeps the stock surface defaults');
+});
+
 test('DEM tile names cover the build bounds in every hemisphere', () => {
   assert.deepEqual(demTiles({ left: -120.5, bottom: 38.65, right: -119.55, top: 39.5 }),
     ['elevation/N38/N38W121.hgt', 'elevation/N38/N38W120.hgt', 'elevation/N39/N39W121.hgt', 'elevation/N39/N39W120.hgt']);
