@@ -1,5 +1,6 @@
 #include "bikesy_policy.h"
 #include "bikesy_profile.h"
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 void require(bool b){if(!b)throw std::runtime_error("Policy test failed");}
@@ -31,8 +32,24 @@ int main(){
  {std::vector<double> h{1900,1903};require(near(profile_uphill(h,30).first,positive_grade_integral(3,kHillMinRun)));
   require(profile_uphill(h,30).first<positive_grade_integral(3,30));
   require(near(profile_uphill(h,200).first,positive_grade_integral(3,200)));}
- // The reverse cost is the forward cost of the mirrored profile: same turning points, climbs and descents swapped.
- {std::vector<double> h{1900,1912,1960,1900,1990,1940,2001},m;for(double x:h)m.push_back(-x);
-  auto a=profile_uphill(h,180),b=profile_uphill(m,180);require(near(a.first,b.second)&&near(a.second,b.first)&&a.first>0&&a.second>0);}
+// Orientation: the hysteresis is directional, so each direction is costed by its own pass and
+// reversing the samples exchanges the two costs exactly. Humps near the band size are where a
+// single shared pass would disagree with itself.
+{auto flip=[](std::vector<double> h){std::reverse(h.begin(),h.end());return h;};
+ const std::vector<std::vector<double>> cases{
+  {1900,1930,1900,1935,1900},{1900,1935,1900,1930,1900},
+  {1900,1912,1960,1900,1990,1940,2001},
+  {1900,1934,1902,1938,1899,1936,1905,1940,1900,1937,1950,1912,1948,1910,1990,1951,1960},
+  {1900,1936,1901,1934,1903,1937,1900,1939,1904,1936,1900},{1900,1903},ramp(9,-2)};
+ for(const auto& h:cases){const double len=30.0*(h.size()-1);
+  const auto a=profile_uphill(h,len),b=profile_uphill(flip(h),len);
+  require(a.first==b.second&&a.second==b.first);
+  // The reverse cost is the forward cost of the reversed profile, from a pass of its own.
+  require(a.second==profile_uphill(flip(h),len).first);}
+ // Mirrored heights still swap ascent and descent for a symmetric profile.
+ std::vector<double> h{1900,1912,1960,1900,1990,1940,2001},m;for(double x:h)m.push_back(-x);
+ auto a=profile_uphill(h,180),b=profile_uphill(m,180);require(a.first>0&&a.second>0&&b.first>0&&b.second>0);
+ // The segment count is the forward pass's.
+ size_t seg=0;profile_uphill(h,180,kHillDeadBand,kHillMinRun,&seg);require(seg==hill_turning_points(h,kHillDeadBand).size()-1);}
  std::cout<<"positive-only convex grade, profile filter and conservative connectivity tests passed\n";
 }

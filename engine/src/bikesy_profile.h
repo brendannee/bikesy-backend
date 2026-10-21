@@ -4,6 +4,9 @@
 // changing this filter changes the policy data but never the engine binary.
 // How the two constants were chosen: docs/HILL-COST.md.
 #include "bikesy_policy.h"
+#include <algorithm>
+#include <cstddef>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -36,21 +39,34 @@ inline std::vector<size_t> hill_turning_points(const std::vector<double>& h, dou
   return at;
 }
 
+// Uphill cost of travelling a profile from its first sample to its last: the
+// convex grade integral of the mean grade between consecutive turning points.
+// `segments`, if given, receives the number of turning-point segments.
+inline double profile_uphill_one_way(const std::vector<double>& h, double ds, double band, double min_run,
+                                     size_t* segments = nullptr) {
+  const auto at = hill_turning_points(h, band);
+  double cost = 0;
+  for (size_t j = 1; j < at.size(); ++j) {
+    const double run = std::max(ds * (at[j] - at[j - 1]), min_run);
+    cost += positive_grade_integral(h[at[j]] - h[at[j - 1]], run);
+  }
+  if (segments) *segments = at.size() - 1;
+  return cost;
+}
+
 // Forward and reverse uphill cost of a profile sampled at equal spacing along
-// an edge of `length` metres: the convex grade integral of the mean grade
-// between consecutive turning points.
+// an edge of `length` metres. The filter is directional (hysteresis), so each
+// direction is costed by its own pass in its own travel order: the reverse cost
+// is the forward cost of the reversed profile. That makes the result independent
+// of which way the way was digitised: profile_uphill(reverse(h)) == {rev, fw}.
+// `segments`, if given, receives the forward pass's segment count.
 inline std::pair<double, double> profile_uphill(const std::vector<double>& h, double length,
-                                                double band = kHillDeadBand, double min_run = kHillMinRun) {
+                                                double band = kHillDeadBand, double min_run = kHillMinRun,
+                                                size_t* segments = nullptr) {
   if (h.size() < 2 || !(length > 0)) throw std::runtime_error("Invalid Bikesy elevation profile");
   const double ds = length / (h.size() - 1);
-  const auto at = hill_turning_points(h, band);
-  double fw = 0, rev = 0;
-  for (size_t j = 1; j < at.size(); ++j) {
-    const double dh = h[at[j]] - h[at[j - 1]];
-    const double run = std::max(ds * (at[j] - at[j - 1]), min_run);
-    fw += positive_grade_integral(dh, run);
-    rev += positive_grade_integral(-dh, run);
-  }
-  return {fw, rev};
+  const double fw = profile_uphill_one_way(h, ds, band, min_run, segments);
+  const std::vector<double> r(h.rbegin(), h.rend());
+  return {fw, profile_uphill_one_way(r, ds, band, min_run)};
 }
 }

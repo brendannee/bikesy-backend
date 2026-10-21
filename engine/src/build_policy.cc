@@ -45,7 +45,7 @@ int main(int argc,char** argv){try{
     }
     for(double h:heights)if(!std::isfinite(h)||h<=-32768)throw std::runtime_error("Missing DEM elevation");
     // Dead-band and minimum run: see bikesy_profile.h and docs/HILL-COST.md.
-    const auto [fw,rev]=bikesy::profile_uphill(heights,length);segments+=bikesy::hill_turning_points(heights,bikesy::kHillDeadBand).size()-1;
+    size_t profile_segments=0;const auto [fw,rev]=bikesy::profile_uphill(heights,length,bikesy::kHillDeadBand,bikesy::kHillMinRun,&profile_segments);segments+=profile_segments;
     found=profiles.emplace(off,std::make_pair(float(fw),float(rev))).first;
    }
    uphill[entry.edges+e]=edge->forward()?found->second.first:found->second.second;
