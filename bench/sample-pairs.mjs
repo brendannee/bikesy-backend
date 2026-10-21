@@ -83,6 +83,11 @@ function writeCatalog(out, header, pairs) {
   writeFileSync(out, `{\n  "region": ${JSON.stringify(header.region)},\n  "notes": ${JSON.stringify(header.notes)},\n  "attribution": ${JSON.stringify(header.attribution)},\n  "generator": ${JSON.stringify(header.generator)},\n  "pairs": [\n${pairs.map(p => '    ' + JSON.stringify(p)).join(',\n')}\n  ]\n}\n`);
 }
 
+// The API refuses endpoints outside the service area (config bounds minus bounds_inset), and a
+// snap can cross that edge, so snapped points are checked again.
+const inside = (bounds, [lat, lon]) => lon >= bounds.left && lon <= bounds.right && lat >= bounds.bottom && lat <= bounds.top;
+const regionBounds = region => loadConfig({ BIKESY_CONFIG: resolve(BENCH_DIR, '..', 'config', `${region}.json`) }).bounds;
+
 // Weighted mode: purposes, categories and weighted points instead of building density.
 async function sampleWeighted(values) {
   const region = values.region;
@@ -94,6 +99,7 @@ async function sampleWeighted(values) {
   const loaded = loadWeightedPoints(pointsPath);
   const points = loaded.points.filter(seasonFilter(params.season));
   const zoneInfo = loadZones(resolve(dirname(pointsPath), `${region}-zones.json`));
+  const bounds = regionBounds(region);
   const rand = random(params.seed);
   const sampler = createPointSampler(points, loaded.purposes, rand, { zoneAlpha: params.zone_alpha, weightPower: params.weight_power,
     decayKm: params.decay_km, minKm: params.min_km, maxKm: params.max_km });
@@ -109,7 +115,7 @@ async function sampleWeighted(values) {
     const draw = sampler.next();
     if (!draw) continue;
     const [a, b] = await snapToBicycleEdge(valhalla, [[draw.from.lat, draw.from.lon], [draw.to.lat, draw.to.lon]]);
-    if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m) { rejected++; continue; }
+    if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m || !inside(bounds, a.point) || !inside(bounds, b.point)) { rejected++; continue; }
     const km = haversine(a.point, b.point) / 1000;
     if (km < params.min_km || km > params.max_km) { rejected++; continue; }
     const n = String(pairs.length + 1).padStart(3, '0');
@@ -178,7 +184,7 @@ async function main() {
     }
     if (!to) continue;
     const [a, b] = await snapToBicycleEdge(valhalla, [from, to]);
-    if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m) continue;
+    if (!a || !b || a.distance > params.snap_m || b.distance > params.snap_m || !inside(config.bounds, a.point) || !inside(config.bounds, b.point)) continue;
     const d = haversine(a.point, b.point) / 1000;
     if (d < params.min_km || d > params.max_km) continue;
     const n = String(pairs.length + 1).padStart(3, '0');
