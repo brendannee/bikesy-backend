@@ -1,0 +1,5 @@
+{
+  "description": "Hill weight: use_hills for all six scenarios (0.5 is the current value; higher means less hill cost).",
+  "base": "config",
+  "grid": { "options.use_hills": [0.6, 0.7, 0.8, 0.9] }
+}

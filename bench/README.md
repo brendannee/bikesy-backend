@@ -613,6 +613,37 @@ npm run bench -- --region tahoe --tuning config --tuning packages --sets curated
 npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/<date>-packages --baseline config
 ```
 
+## Example: Tahoe tuning, October 2026
+
+Tuning the six Tahoe scenarios (`config/tahoe.json`) with the committed hill filter, one
+family at a time, on the 2026-10-19 graph and the curated, sampled and realistic sets
+(422 trips per scenario). Each stage changes one family and holds the rest:
+
+1. **Baseline.** `config` on an image built with the filter, next to `today` (scenarios 1 and 2 on
+   the deployed v2-20261019 image), in one run.
+2. **Hill cost.** `hills-use.sweep.json` (`use_hills`), then `hill-exponent.sweep.json`, whose policy
+   files come from `build_policy` with its optional exponent argument.
+3. **Traffic.** `use_roads` for the quiet and busy scenarios as tunings that hold only those modes.
+4. **Surface.** `unpaved_penalty` for scenarios 1 to 4 and `paved_penalty` for 5 and 6, then the
+   Spooner grade and Marlette Flume pairs (`es-spooner-grade-summit`, `es-spooner-tunnelcreek`).
+5. **Combination.** The `config` tuning on a data image built from the final config, with the
+   paved surface defaults on and off, then the same bench on SF.
+
+Judge on the sampled and realistic sets; curated expectations are guardrails. When an expectation
+fails in a mode it was not written for, scope it to the right facets and say so. This round moved
+six rules: the Class I minimums (Kiva, Truckee to Northstar, Tahoe City to Olympic Valley) and the
+busy US 50 detour and via-ratio limits (Carson City junction to Glenbrook, Spooner grade) now apply
+to the mixed and paved surface only, since Prefer Dirt trades both for trails; Tunnel Creek's 60%
+unpaved minimum applies to quiet dirt only, because Fastest Route plus Prefer Dirt may take SR 28
+instead of the Flume Trail.
+
+To show SF is unaffected by a change that is not Tahoe-only, run the SF bench on the same SF image
+before and after with a fresh `BIKESY_BENCH_DIR` and compare `response_sha256` per route:
+
+```sh
+npm run bench -- --region sf --image bikesy-sf-data:latest --tuning config --name sf-after
+```
+
 ## Example: SF baseline, October 2026
 
 A first baseline for a second region. Data image `bikesy-sf-data:20261020` (OSM 2026-10-20),
