@@ -65,7 +65,9 @@ If production moves to a newer data image, use its digest and `$WORK` from
 
 ## Next steps
 
-1. Field-test with https://navtest.tahoebike.org/?nav=1.
+1. Field-test with https://navtest.tahoebike.org. The frontend has no URL gate: navigation is
+   on by default in regions that set `NAVIGATION_ENABLED`, and it sends `nav=1` only for
+   rides and reroutes. `nav=1` stays opt-in on the backend, so planning requests are unchanged.
 2. Open the PR on `brendannee/bikesy-backend`. The README's API section already documents
    `nav=1`.
 3. Release to Tahoe production with the release-backend skill, and add a `nav=1` check to its
