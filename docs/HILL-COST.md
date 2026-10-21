@@ -221,6 +221,43 @@ What this does and does not do:
   on US 50 (the portal sample sits in the cliff, 21 m above the road), still costs the adjoining
   edge. The graph build could also flag `bridge=movable` and the other `bridge=*` values; with this
   change that is no longer needed for the hill cost, and it would be a graph release.
+## Grade exponent: a per-region setting
+
+The cost of a climb is `run · (grade / 0.05)^e`. The cube (`e` = 3) is the default and is
+unchanged for every region that does not say otherwise. A region config can set
+`"hill_cost": {"exponent": E}` (1 to 3); `scripts/rebuild-variant.py` passes it to
+`build_policy` as an optional last argument, and the engine binary is unchanged. A steady 5% grade
+costs about 1 unit per metre at any exponent; steeper grades cost less than with the cube
+(10%: 4 per metre at `e` = 2, 8 at `e` = 3; 20%: 16 against 64).
+
+Tahoe sets `e` = 2. After the 35 m dead-band, the hill cost still made routes avoid real but
+moderate climbs by long detours, because the cube makes every steep stretch worth tens of
+kilometres. The benchmark, on the 2026-10-19 Tahoe graph with the dead-band and minimum run
+(`bench/tunings/tahoe/hill-exponent.sweep.json`, 422 trips per scenario: curated, sampled and
+realistic sets, the final scenarios of `config/tahoe.json`):
+
+| Exponent | Detour > 1.5× (scenarios 1 / 2 / 3 / 4 / 5 / 6) | Detour > 2× (all six) | Mean climb per trip, scenarios 1 / 2 / 5 / 6 |
+| --- | --- | --- | --- |
+| 3 (cubic) | 11 / 17 / 12 / 17 / 21 / 10 | 3 / 4 / 3 / 4 / 3 / 3 | 135 / 125 / 180 / 150 m |
+| 2.5 | 6 / 13 / 8 / 10 / 22 / 7 | 1 / 3 / 1 / 2 / 2 / 3 | 134 / 125 / 186 / 152 m |
+| **2** | **4 / 10 / 5 / 10 / 15 / 2** | **0 / 2 / 0 / 2 / 0 / 0** | **137 / 125 / 191 / 155 m** |
+| 1.5 | 4 / 9 / 4 / 9 / 13 / 2 | 0 / 1 / 0 / 1 / 0 / 0 | 139 / 125 / 195 / 164 m |
+
+`e` = 2 gets nearly all of the gain available while climbing little more: mean climb is within 2%
+of the cube in scenarios 1 to 4 and 3 to 6% higher in the dirt ones. At 1.5 the dirt scenarios
+climb 8 to 9% more than the cube, for a handful more fixed routes. Other levers tried on the same
+sets, none better:
+
+- The dead-band and minimum run sit on a plateau: bands of 25 to 100 m and minimum runs of 60 or
+  90 m give the same aggregates within two routes per scenario, so 35 m and 60 m stay.
+- A grade cap (10% or 15%) fixes fewer routes than the exponent.
+- `use_hills` 0.6 to 0.9 on the cubic policy lowers the pathological counts only as dirt becomes
+  cheaper and climbs grow (scenario 5 mean climb 180 to 239 m at 0.9). On the squared policy,
+  `use_hills` 0.7 for the Fastest Route scenarios fixed one more route, so all six scenarios stay
+  at 0.5.
+- What remains over 1.5× in Fastest Route (`s007`, `s160`, `s026`) are pairs whose shortest
+  route is a steep jeep trail or a 7 to 12% grade for kilometres; the detour is the cost model
+  working, and they are not DEM artefacts.
 
 ## Releasing
 
