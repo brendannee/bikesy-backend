@@ -645,6 +645,35 @@ before and after with a fresh `BIKESY_BENCH_DIR` and compare `response_sha256` p
 npm run bench -- --region sf --image bikesy-sf-data:latest --tuning config --name sf-after
 ```
 
+## Example: Tahoe busy roads, October 2026
+
+Riders found that Avoid Busy Roads still used US 50 and Pioneer Trail where quiet streets and
+paths ran alongside ([Busy roads](../docs/REGIONS.md#busy-roads)). `busy.sweep.json` sweeps the
+three busy-road keys in the quiet scenarios on an engine with the patch; `r1p0u0` reproduces the
+earlier configuration byte for byte, so one run holds the whole trade-off:
+
+```sh
+NODE_OPTIONS=--max-old-space-size=12288 npm run bench -- --region tahoe --image IMAGE \
+  --tuning config --tuning busy --sets curated,sampled,realistic,sampled-weighted --name busy
+```
+
+The sweep has 31 tunings, so give Node a larger heap. Scenario 1, all four sets (633 trips):
+
+| Tuning | Arterial share | Distance | Routes > 1.5x | Expectations |
+| --- | --- | --- | --- | --- |
+| before (`r1p0u0`) | 30.3% | 7,050 km | 6 | 29/32 |
+| `busy_lane_relief` 0.5 (`r0.5p0u0`) | 27.6% | +0.6% | 7 | 31/32 |
+| `busy_town_penalty` 2 (`r1p0u2`) | 26.9% | +0.8% | 11 | 32/32 |
+| **both (config, `r0.5p0u2`)** | **24.5%** | **+1.7%** | **12** | **32/32** |
+| relief 0.25, town 3 (`r0.25p0u3`) | 20.9% | +2.9% | 12 | 32/32 |
+| `busy_penalty` 0.5 (`r1p0.5u0`) | 26.6% | +0.5% | 8 | 32/32 |
+| `busy_penalty` 1 (`r1p1u0`) | 22.7% | +1.2% | 8 | 30/32 (Tahoe City to Truckee loop) |
+| `busy_penalty` 2 (`r1p2u0`) | 15.5% | +3.9% | 12 | 28/32 |
+
+`busy_penalty` lowers the share most, but it also charges open-country highways, and from 1 (0.75 with relief 0.5) it
+brings back the loops that `use_roads` 0 caused. The arterial share counts every trunk, primary and
+secondary road, so a large part of what remains is open-country highway with no alternative.
+
 ## Example: SF baseline, October 2026
 
 A first baseline for a second region. Data image `bikesy-sf-data:20261020` (OSM 2026-10-20),
