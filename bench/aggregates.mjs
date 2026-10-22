@@ -49,6 +49,8 @@ export const AGGREGATES = [
   { name: 'high_stress_km', label: 'High-stress km', format: 'km', better: 'lower', compute: routes => sum(metric(routes, 'high_stress_km')) },
   { name: 'high_stress_share', label: 'High-stress share', format: 'share', better: 'lower',
     compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'high_stress_km')) / sum(metric(routes, 'distance_km')) : null },
+  { name: 'arterial_share', label: 'Arterial share', format: 'share', better: null,
+    compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'arterial_km')) / sum(metric(routes, 'distance_km')) : null },
   { name: 'unpaved_share', label: 'Unpaved share', format: 'share', better: null,
     compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'unpaved_km')) / sum(metric(routes, 'distance_km')) : null },
   { name: 'class_i_share', label: 'Class I share (mean)', format: 'share', better: 'higher',

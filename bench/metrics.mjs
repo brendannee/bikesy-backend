@@ -41,6 +41,16 @@ export function isHighStress(edge) {
   return (edge.speed_limit ?? 0) >= HIGH_STRESS_SPEED_KPH || (!lane && !edge.shoulder);
 }
 
+// Arterial riding: any trunk, primary or secondary road (including ramps and turn
+// channels) ridden on the bike, whatever its speed limit, bike lane or shoulder. The
+// complement of high stress for "avoid busy roads" questions: a 40 mph five-lane trunk
+// with a bike lane is not high stress by the rule above but is still a busy road.
+export function isArterial(edge) {
+  if (edge.travel_mode && edge.travel_mode !== 'bicycle') return false;
+  if (!['road', 'ramp', 'turn_channel'].includes(edge.use ?? 'road')) return false;
+  return edge.road_class === 'motorway' || ARTERIALS.has(edge.road_class);
+}
+
 // Class I: a paved, car-free path ridden on the bike (cycleway, shared-use path or
 // bike-legal footway; not sidewalks).
 const CAR_FREE = new Set(['cycleway', 'path', 'footway', 'pedestrian', 'bridleway', 'mountain_bike']);
@@ -101,6 +111,10 @@ export const METRICS = [
     compute: ({ route }) => km(route.edges, isHighStress) },
   { name: 'high_stress_share', label: 'High-stress share', unit: '', better: 'lower',
     compute: ({ route }) => share(route.edges, isHighStress) },
+  { name: 'arterial_km', label: 'Arterial', unit: 'km', better: null,
+    compute: ({ route }) => km(route.edges, isArterial) },
+  { name: 'arterial_share', label: 'Arterial share', unit: '', better: null,
+    compute: ({ route }) => share(route.edges, isArterial) },
   { name: 'class_i_share', label: 'Class I share', unit: '', better: 'higher',
     compute: ({ route }) => share(route.edges, isClassI) },
   { name: 'wilderness_km', label: 'In wilderness', unit: 'km', better: 'lower',

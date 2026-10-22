@@ -428,6 +428,7 @@ come from Valhalla 3.5.1 `trace_attributes` on the route's own shape, elevation 
 | `climb_m` | Total ascent, ignoring rises under 3 m between reversals (DEM noise). |
 | `unpaved_km`, `unpaved_share` | Surfaces other than paved_smooth/paved/paved_rough: compacted and worse, which includes untagged paths. |
 | `high_stress_km`, `high_stress_share` | Ridden on a motorway, or on a trunk/primary/secondary road (incl. its ramps and turn channels) with a tagged limit ≥ 45 mph (72 km/h) or with neither a bike lane (`cycle_lane` dedicated/separated) nor a shoulder. Sharrows are not a lane; untagged speed limits count as low. |
+| `arterial_km`, `arterial_share` | Ridden on a motorway, trunk, primary or secondary road (incl. ramps and turn channels), whatever its speed limit, bike lane or shoulder: the busy-road share that "Avoid Busy Roads" questions need when a bike lane keeps an arterial out of `high_stress_km`. |
 | `class_i_share` | Paved, car-free path (cycleway, path, footway, pedestrian; not sidewalks) ridden on the bike. |
 | `wilderness_km` | Length inside the region's wilderness polygons (segment midpoints). |
 | `walk_km` | Walking sections (stairs, dismount). |
