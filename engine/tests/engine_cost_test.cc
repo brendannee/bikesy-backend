@@ -3,10 +3,12 @@
 #include "sif/bicyclecost.h"
 #include "sif/dynamiccost.h"
 #include <iostream>
+#include <utility>
+#include <vector>
 void require(bool b,const char* msg){if(!b)throw std::runtime_error(msg);}
-valhalla::sif::cost_ptr_t model(float roads,float hills,const std::string& extra=""){
+valhalla::sif::cost_ptr_t model(float roads,float hills,const std::string& extra="",const std::string& type="Hybrid"){
  valhalla::Costing c;rapidjson::Document d;
- std::string s="{\"bicycle\":{\"bicycle_type\":\"Hybrid\",\"use_roads\":"+std::to_string(roads)+",\"use_hills\":"+std::to_string(hills)+",\"use_ferry\":0"+extra+"}}";
+ std::string s="{\"bicycle\":{\"bicycle_type\":\""+type+"\",\"use_roads\":"+std::to_string(roads)+",\"use_hills\":"+std::to_string(hills)+",\"use_ferry\":0"+extra+"}}";
  d.Parse(s.c_str());valhalla::sif::ParseBicycleCostOptions(d,"/bicycle",&c);return valhalla::sif::CreateBicycleCost(c);
 }
 bool same(const valhalla::sif::Cost& a,const valhalla::sif::Cost& b){return a.cost==b.cost&&a.secs==b.secs;}
@@ -24,12 +26,23 @@ int main(int argc,char**argv){try{
  // Busy-road preference (busy_penalty); an absent key, or 0, keeps stock costs.
  auto quiet=model(.1,.5,",\"unpaved_penalty\":1"),quiet_neutral=model(.1,.5,",\"unpaved_penalty\":1,\"busy_penalty\":0");
  auto quiet_pen=model(.1,.5,",\"unpaved_penalty\":1,\"busy_penalty\":0.5"),quiet_cfg=model(.1,.5,",\"unpaved_penalty\":1,\"busy_penalty\":2");
- size_t busy_edges=0,busy_lane_edges=0;
+ // Busy penalty on other bicycle types and with the stock avoid_bad_surfaces term: each is a
+ // (base, base + busy_penalty 1.5) pair, so the difference must be 1.5 * weight * length.
+ const float kBusyK=1.5f;
+ std::vector<std::pair<valhalla::sif::cost_ptr_t,valhalla::sif::cost_ptr_t>> busy_variants;
+ for(const char* type:{"Road","Mountain"})busy_variants.push_back({model(.1,.5,"",type),model(.1,.5,",\"busy_penalty\":1.5",type)});
+ busy_variants.push_back({model(.1,.5,",\"avoid_bad_surfaces\":1"),model(.1,.5,",\"avoid_bad_surfaces\":1,\"busy_penalty\":1.5")});
+ busy_variants.push_back({model(.1,.5,",\"avoid_bad_surfaces\":1,\"unpaved_penalty\":1","Road"),model(.1,.5,",\"avoid_bad_surfaces\":1,\"unpaved_penalty\":1,\"busy_penalty\":1.5","Road")});
+ // Shortest modes are pure distance: the busy key must change nothing (implicit: use_roads 1, use_hills 1).
+ auto short_plain=model(.1,.5,",\"shortest\":true"),short_busy=model(.1,.5,",\"shortest\":true,\"busy_penalty\":2"),direct_busy=model(1,1,",\"busy_penalty\":2");
+ size_t busy_edges=0,busy_lane_edges=0,busy_variant_edges=0;
  const float kStock[]={1.0f,2.5f,4.5f,7.0f};
  size_t uphill=0,downhill=0,mixed=0,total=0,unpaved_edges=0,paved_edges=0;
  for(auto id:reader.GetTileSet()){auto tile=reader.GetGraphTile(id);
   for(uint32_t i=0;i<tile->header()->directededgecount();++i){auto edge=tile->directededge(i);if(edge->is_shortcut()||edge->use()==Use::kFerry||edge->use()==Use::kRailFerry)continue;
    uint8_t flow=0;auto a=avoid->EdgeCost(edge,tile,TimeInfo::invalid(),flow),b=ignore->EdgeCost(edge,tile,TimeInfo::invalid(),flow),c=direct->EdgeCost(edge,tile,TimeInfo::invalid(),flow);float g=bikesy::policy().uphill(edge,tile);
+   {auto sp=short_plain->EdgeCost(edge,tile,TimeInfo::invalid(),flow),sb=short_busy->EdgeCost(edge,tile,TimeInfo::invalid(),flow),db=direct_busy->EdgeCost(edge,tile,TimeInfo::invalid(),flow);
+    require(same(sp,sb),"busy_penalty changed explicit shortest mode");require(same(c,db),"busy_penalty changed implicit shortest (Direct) mode");}
    require(a.cost>=b.cost,"Uphill avoidance gave credit");if(edge->use()==Use::kSteps){require(c.cost>edge->length(),"Direct Ignore omitted stair burden");}else require(std::abs(c.cost-edge->length())<.01,"Nonstair Direct Ignore not distance");require(a.secs==b.secs,"Hill preference altered ETA speed");
    require(std::abs((a.cost-b.cost)-4*g)<std::max(.01f,4*g*.0001f),"Actual engine cost differs from positive grade integral");
    graph_tile_ptr other;auto opposite=reader.GetOpposingEdge(edge,other);if(opposite&&other){float reverse=bikesy::policy().uphill(opposite,other);if(g==0&&reverse>0){require(a.cost==b.cost,"Downhill penalized");++downhill;}if(g>0)++uphill;if(g>0&&reverse>0)++mixed;}
@@ -58,13 +71,18 @@ int main(int argc,char**argv){try{
     require(near_diff(qp.cost-q.cost,.5f*w*len,qp.cost),"busy_penalty is not an additive factor on busy roads");
     require(near_diff(qc.cost-q.cost,2.f*w*len,qc.cost),"busy_penalty does not scale with its value");
     if(w==0)require(same(qp,q)&&same(qc,q),"Busy-road preference changed a non-busy edge");
-    if(w>0){++busy_edges;if(int(edge->cyclelane())>=2||edge->shoulder())++busy_lane_edges;}
+    for(auto& v:busy_variants){
+     auto vb=v.first->EdgeCost(edge,tile,TimeInfo::invalid(),flow),vp=v.second->EdgeCost(edge,tile,TimeInfo::invalid(),flow);
+     require(vb.secs==vp.secs,"Busy-road preference altered ETA speed (bicycle type)");
+     require(near_diff(vp.cost-vb.cost,kBusyK*w*len,vp.cost),"busy_penalty is not an additive factor on busy roads (bicycle type or avoid_bad_surfaces)");
+    }
+    if(w>0){++busy_variant_edges;++busy_edges;if(int(edge->cyclelane())>=2||edge->shoulder())++busy_lane_edges;}
    }
    ++total;
   }
  }
  require(uphill>100&&downhill>100&&mixed>100,"Insufficient real grade/reversal coverage");
  require(paved_edges>100&&unpaved_edges>100,"Insufficient paved/unpaved surface coverage");
- require(busy_edges>100&&busy_lane_edges>100,"Insufficient busy-road coverage");
+ require(busy_edges>100&&busy_lane_edges>100&&busy_variant_edges>100,"Insufficient busy-road coverage");
  std::cout<<"{\"passed\":true,\"edges_checked\":"<<total<<",\"uphill\":"<<uphill<<",\"downhill_only\":"<<downhill<<",\"mixed_grade\":"<<mixed<<",\"paved\":"<<paved_edges<<",\"unpaved\":"<<unpaved_edges<<",\"busy\":"<<busy_edges<<",\"busy_with_lane\":"<<busy_lane_edges<<"}\n";
 }catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}}

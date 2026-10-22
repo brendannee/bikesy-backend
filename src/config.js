@@ -53,8 +53,10 @@ export const BICYCLE_TYPES = ['Road', 'Cross', 'Hybrid', 'Mountain'];
 export const SURFACE_PENALTY_KEYS = ['unpaved_penalty', 'paved_penalty'];
 export const MAX_SURFACE_PENALTY = 10;
 
-// Surface-related passthrough keys. Valhalla silently replaces out-of-range values with
-// defaults, so reject them here. See docs/REGIONS.md#surface-preference.
+// Surface-related passthrough keys. Stock Valhalla silently replaces an out-of-range
+// avoid_bad_surfaces with its default, and the unpaved_penalty/paved_penalty keys clamp to 0-10 in
+// the engine and drop non-finite values, so a typo would otherwise change routing without notice.
+// Reject out-of-range values here. See docs/REGIONS.md#surface-preference.
 function validateSurfaceOptions(id, options) {
   if (Object.hasOwn(options, 'bicycle_type') && !BICYCLE_TYPES.includes(options.bicycle_type)) {
     throw new Error(`Invalid bicycle_type in scenario ${id}; use one of ${BICYCLE_TYPES.join(', ')}`);
@@ -81,11 +83,21 @@ function validateSurfaceOptions(id, options) {
 // Busy-road preference (docs/REGIONS.md#busy-roads): busy_penalty adds to the edge factor of
 // fast trunk, primary and secondary roads. It needs the engine patch; without it costs are stock.
 export const BUSY_ROAD_KEYS = ['busy_penalty'];
+export const MAX_BUSY_PENALTY = 10;
 function validateBusyRoadOptions(id, options) {
-  for (const [key, max] of [['busy_penalty', 10]]) {
-    if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > max)) {
-      throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${max}`);
+  for (const key of BUSY_ROAD_KEYS) {
+    if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > MAX_BUSY_PENALTY)) {
+      throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${MAX_BUSY_PENALTY}`);
     }
+  }
+  if (!BUSY_ROAD_KEYS.some(key => Object.hasOwn(options, key))) return;
+  // The engine returns pure distance in Valhalla's shortest mode and in Bikesy's implicit shortest
+  // mode (use_roads 1 and use_hills 1), so the penalty would be silently ignored.
+  if (Object.hasOwn(options, 'shortest') && options.shortest !== false) {
+    throw new Error(`Invalid shortest in scenario ${id}; it cannot be combined with busy_penalty`);
+  }
+  if (options.use_roads === 1 && options.use_hills === 1) {
+    throw new Error(`Invalid scenario ${id}; busy_penalty with use_roads 1 and use_hills 1 (shortest mode) would have no effect`);
   }
 }
 

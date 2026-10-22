@@ -228,7 +228,8 @@ test('surface passthrough keys are validated and reach Valhalla unchanged', () =
 test('busy-road keys are validated and reach Valhalla unchanged', () => {
   const base = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
   const withScenario = options => ({ ...base, scenarios: { ...base.scenarios, 9: { use_hills: 0.5, use_roads: 0.1, ...options } } });
-  for (const options of [{ busy_penalty: 0 }, { busy_penalty: 10 }, { busy_penalty: 2, unpaved_penalty: 8 }]) {
+  for (const options of [{ busy_penalty: 0 }, { busy_penalty: 10 }, { busy_penalty: 2, unpaved_penalty: 8 },
+    { busy_penalty: 2, shortest: false }, { busy_penalty: 2, use_roads: 1, use_hills: 0.9 }]) {
     assert.doesNotThrow(() => validateRegionConfig(withScenario(options)), JSON.stringify(options));
   }
   for (const [options, message] of [
@@ -236,6 +237,8 @@ test('busy-road keys are validated and reach Valhalla unchanged', () => {
     [{ busy_penalty: 11 }, /Invalid busy_penalty in scenario 9/],
     [{ busy_penalty: '1' }, /Invalid busy_penalty in scenario 9/],
     [{ busy_penalty: null }, /Invalid busy_penalty in scenario 9/],
+    [{ busy_penalty: 2, shortest: true }, /Invalid shortest in scenario 9; it cannot be combined with busy_penalty/],
+    [{ busy_penalty: 2, use_roads: 1, use_hills: 1 }, /busy_penalty with use_roads 1 and use_hills 1 .* would have no effect/],
   ]) assert.throws(() => validateRegionConfig(withScenario(options)), message);
   const config = validateRegionConfig(withScenario({ busy_penalty: 0.5 }));
   const query = new URLSearchParams('lat1=39.1&lng1=-120.39&lat2=39.11&lng2=-120.38&scenario=9');

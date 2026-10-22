@@ -108,7 +108,10 @@ against 1.8x for a residential street and 1.2 to 1.4x for a bike path. The extra
 crossings of a quiet detour then often outweigh the difference. One optional scenario key
 changes that for fast arterials: motorway, trunk, primary and secondary road, ramp and turn
 channel edges, weighted by edge speed from 0 at 40 km/h (25 mph) to 1 at 56 km/h (35 mph)
-and above. Everything else, including service roads and every path, is untouched.
+and above. The weight uses the edge speed Valhalla assigned (`edge->speed()`: the maxspeed
+when tagged, otherwise the road-class default), not the posted limit. Untagged arterials get
+the class default, which is usually 56 km/h or more, so they count as fully busy. Everything
+else, including service roads and every path, is untouched.
 
 | Key | Range | Effect on busy edges |
 | --- | --- | --- |
@@ -123,7 +126,11 @@ and above. Everything else, including service roads and every path, is untouched
 - **Without the key, costs are bit-identical**, so SF and Fastest Route are unchanged.
   `ParseBicycleCostOptions` stores the value, like the surface keys, in a motor-vehicle costing
   option field that bicycle costing never reads (`use_primary`), set only when the key is
-  present. Speed and time estimates do not change, and Valhalla's `shortest` mode ignores it.
+  present. Speed and time estimates do not change.
+- **Shortest modes ignore it.** Valhalla's `shortest` mode and Bikesy's implicit shortest mode
+  (`use_roads` 1 with `use_hills` 1) return pure distance, so `busy_penalty` would have no
+  effect there. Config validation rejects `busy_penalty` combined with `shortest` other than
+  false, or with `use_roads` 1 and `use_hills` 1.
 - **Engine requirement.** An engine without the patch silently ignores the key.
 - **Not kept.** Two variants tried in October 2026 were dropped: a town-only penalty weighted by
   Valhalla's road density (the classification is opaque: the 45 to 50 mph part of Pioneer Trail
