@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { loadConfig, listRegionConfigs } from '../src/config.js';
 import { encode } from '../src/polyline.js';
 import { coverage, densify, haversine, insideAny, lineLength, parseGpx, preparePolygons, similarity, simplify } from '../bench/lib/geo.mjs';
-import { METRICS, climb, computeMetrics, isClassI, isHighStress, isUnpaved, kmInside, stressClass } from '../bench/metrics.mjs';
+import { METRICS, climb, computeMetrics, isArterial, isClassI, isHighStress, isUnpaved, kmInside, stressClass } from '../bench/metrics.mjs';
 import { evaluateExpectations } from '../bench/expectations.mjs';
 import { computeAggregates, quantile } from '../bench/aggregates.mjs';
 import { configFacets, expandPath, expandSweep, listTunings, loadTunings, resolveSpec } from '../bench/lib/tunings.mjs';
@@ -59,6 +59,11 @@ test('edge classes: high stress, Class I, unpaved', () => {
   assert.equal(isHighStress(edge({ road_class: 'tertiary', speed_limit: 90 })), false);
   assert.equal(isHighStress(edge({ road_class: 'primary', travel_mode: 'pedestrian' })), false);
   assert.equal(isHighStress(edge({ road_class: 'primary', use: 'cycleway' })), false);
+  assert.equal(isArterial(edge({ road_class: 'trunk', speed_limit: 64, cycle_lane: 'dedicated' })), true, 'a bike lane does not make a trunk road quiet');
+  assert.equal(isArterial(edge({ road_class: 'secondary', use: 'ramp' })), true);
+  assert.equal(isArterial(edge({ road_class: 'tertiary' })), false);
+  assert.equal(isArterial(edge({ road_class: 'primary', use: 'cycleway' })), false);
+  assert.equal(isArterial(edge({ road_class: 'primary', travel_mode: 'pedestrian' })), false);
   assert.equal(isClassI(edge({ use: 'cycleway' })), true);
   assert.equal(isClassI(edge({ use: 'path', surface: 'dirt' })), false);
   assert.equal(isClassI(edge({ use: 'sidewalk' })), false);
@@ -82,6 +87,8 @@ test('computeMetrics on a synthetic route', () => {
   assert.equal(m.detour, 1.2);
   assert.equal(m.via_ratio, 1.2);
   assert.equal(m.high_stress_km, 1);
+  assert.equal(m.arterial_km, 1);
+  assert.equal(m.arterial_share, 0.3333);
   assert.equal(m.unpaved_share, 0.3333);
   assert.equal(m.class_i_share, 0.3333);
   assert.equal(m.climb_m, 10);
@@ -141,12 +148,12 @@ test('tunings: config facets, base merge, tuning-wide options and sweeps', () =>
   assert.deepEqual([sfFacets[0].traffic, sfFacets[0].hills, sfFacets[8].traffic, sfFacets[8].hills], ['busy', 'flat', 'quiet', 'tolerant']);
   const [config] = loadTunings('tahoe', tahoe, 'config');
   assert.deepEqual(config.modes.map(m => [m.name, m.facets.traffic, m.facets.surface, m.options.use_roads]),
-    [['1', 'quiet', 'mixed', 0], ['2', 'busy', 'mixed', 1], ['3', 'quiet', 'paved', 0], ['4', 'busy', 'paved', 1], ['5', 'quiet', 'dirt', 0], ['6', 'busy', 'dirt', 1]]);
+    [['1', 'quiet', 'mixed', 0.1], ['2', 'busy', 'mixed', 0.8], ['3', 'quiet', 'paved', 0.1], ['4', 'busy', 'paved', 0.8], ['5', 'quiet', 'dirt', 0.1], ['6', 'busy', 'dirt', 0.8]]);
   const spec = { name: 't', base: 'config', options: { use_hills: 0.9, unpaved_penalty: 2 },
     modes: { '2': null, dirt: { facets: { surface: 'dirt' }, options: { use_roads: 0, paved_penalty: 0.5 } } } };
   const t = resolveSpec('tahoe', tahoe, spec);
   assert.deepEqual(t.modes.map(m => m.name), ['1', '3', '4', '5', '6', 'dirt']);
-  assert.deepEqual(t.modes[0].options, { use_hills: 0.9, use_roads: 0, maneuver_penalty: 2, unpaved_penalty: 2 });
+  assert.deepEqual(t.modes[0].options, { use_hills: 0.9, use_roads: 0.1, maneuver_penalty: 2, unpaved_penalty: 2 });
   const dirt = t.modes.at(-1);
   assert.equal(dirt.facets.mode, 'dirt');
   assert.equal(dirt.options.paved_penalty, 0.5, 'unknown engine keys pass through');

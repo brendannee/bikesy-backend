@@ -14,7 +14,7 @@
     "src/startup-timing.js": "f986b714acb3c300420bc6f44cb367af39b56750ab42ee6186188c3ad052c3fd",
     "src/verify-startup.js": "504e51903bfb60070ff7d61bf83a616062c797cd8470c4f0d32f657f105a24ef",
     "config/sf.json": "ba9b88be5cfbf4045843b352d0c9ced59c1899b904fd115bf9e1fa22ab3d0045",
-    "config/tahoe.json": "493287d6245ed0400f4711c530cc0eff0179817584e3e25bdfe9c6db979bea66"
+    "config/tahoe.json": "18f0524bc7cb5bd90c8f64b9f6f72a35feda8fa314c10861a542aebbe2f91d24"
   },
   "git_deployment_verified": false,
   "source_commit": "bb3fcaa3683581c233f17f4993686ab19209fc89",
@@ -30,5 +30,5 @@
     "config/sf.json": "ba9b88be5cfbf4045843b352d0c9ced59c1899b904fd115bf9e1fa22ab3d0045"
   },
   "source_changed_from_deployed": true,
-  "source_updated_at": "2026-10-22T07:22:06.578Z"
+  "source_updated_at": "2026-10-22T07:22:25.136Z"
 }

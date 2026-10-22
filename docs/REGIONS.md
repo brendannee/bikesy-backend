@@ -109,12 +109,12 @@ v2-20261019 release (see below). Every scenario uses `use_hills` 0.5 and `maneuv
 
 | Scenario | Traffic | Trail Surface | `use_roads` | Surface keys |
 | --- | --- | --- | --- | --- |
-| 1 (default) | Avoid Busy Roads | Paved and Dirt | 0 | `unpaved_penalty` 1 |
-| 2 | Fastest Route | Paved and Dirt | 1 | `unpaved_penalty` 1 |
-| 3 | Avoid Busy Roads | Prefer Paved | 0 | `unpaved_penalty` 2.5 |
-| 4 | Fastest Route | Prefer Paved | 1 | `unpaved_penalty` 1.5 |
-| 5 | Avoid Busy Roads | Prefer Dirt | 0 | `paved_penalty` 2, `bicycle_type` Mountain |
-| 6 | Fastest Route | Prefer Dirt | 1 | `paved_penalty` 2, `bicycle_type` Mountain |
+| 1 (default) | Avoid Busy Roads | Paved and Dirt | 0.1 | `unpaved_penalty` 1 |
+| 2 | Fastest Route | Paved and Dirt | 0.8 | `unpaved_penalty` 0.25 |
+| 3 | Avoid Busy Roads | Prefer Paved | 0.1 | `unpaved_penalty` 8 |
+| 4 | Fastest Route | Prefer Paved | 0.8 | `unpaved_penalty` 8 |
+| 5 | Avoid Busy Roads | Prefer Dirt | 0.1 | `paved_penalty` 2, `bicycle_type` Mountain |
+| 6 | Fastest Route | Prefer Dirt | 0.8 | `paved_penalty` 2, `bicycle_type` Mountain |
 
 The Tahoe config also sets `hill_cost.exponent` 2 and `paved_surface_defaults` true, which are
 properties of the data build, so the scenarios need a data image built from this config (the
@@ -127,16 +127,17 @@ Summary of the evidence, on the 2026-10-19 graph with the 35 m dead-band policy:
 
 - **Hill cost.** The exponent (3 to 2) is the lever that mattered; `use_hills`, band and minimum
   run were flat or traded climb for fewer detours ([HILL-COST.md](HILL-COST.md#grade-exponent-a-per-region-setting)).
-- **Traffic.** `use_roads` 0 and 1 stay. With the hill artefacts gone, no scenario has an absurd
+- **Traffic (retuned 2026-10-21 from rider notes).** Avoid Busy Roads uses `use_roads` 0.1 and Fastest Route 0.8. At 0 the quiet modes took a 32 km, 448 m mountain-bike loop from Tahoe City to Truckee rather than 9 km of SR 89 (and similar loops on es-carsonjct-glenbrook, s030, s187); 0.1 routes them through the canyon for +2.3 points of high-stress share (20.7 to 23.0%) and fewer routes over 1.5x. At 1 Fastest Route gave no credit to a bike lane or parallel path; 0.8 keeps the busy facet, lowers high-stress share from 61.8 to 53.5%, raises Class I share from 3 to 8% and fixes s045, s113, s161 (shorter routes). Earlier note: `use_roads` 0 and 1 stay. With the hill artefacts gone, no scenario has an absurd
   detour left that `use_roads` would fix. Raising quiet `use_roads` from 0 to 0.3 or lowering busy to
   0.7 only moves high-stress share (19 to 27% and 60 to 44%), so the two stay clearly separated.
 - **Neutral default (scenarios 1 and 2).** `unpaved_penalty` 1 makes all unpaved surfaces cost the
   same, as decided. It keeps today's unpaved share (quiet 15% against 14% today), and takes the
   paved Tallac Rd instead of a 0.65 km unpaved path at Kiva Beach (Class I share 0.50 against 0.43
   at 0.5). Lower values (0 to 0.5) gave 19 to 26% unpaved and failed that pair.
-- **Prefer Paved.** 2.5 is the smallest quiet value that takes US 50 on the Spooner grade (8% unpaved
+- **Prefer Paved (retuned 2026-10-21).** `unpaved_penalty` 8 in both traffic modes: riders on road bikes would rather ride around than take any dirt (1144 Golden Bear Trail to The Hangar needs 8 to leave the meadow paths, 5.5 km paved instead of 3.0 km with 1.4 km of dirt). Unpaved share 8.2 to 2.1% (quiet) and 3.0 to 1.3% (Fastest); routes over 1.5x rise from 5 to 13 and 10 to 16 because staying paved is a detour where the short way is a jeep trail (s007 58 km instead of 26). Earlier note: 2.5 is the smallest quiet value that takes US 50 on the Spooner grade (8% unpaved
   over the 422 trips; 1.5 gives 12%, 4 gives 5% but 7 routes over 1.5x). Fastest Route already takes
   US 50, so 1.5 there only trims the remaining unpaved shortcuts.
+- **Fastest Route + Paved and Dirt (retuned 2026-10-21).** `unpaved_penalty` 0.25, about the Hybrid speed loss on dirt, so Fastest takes a meaningfully shorter dirt route (Meyers to LTCC: 9.7 km meadow paths instead of 11.9 km of US 50). Unpaved share 3.2 to 7.0%, routes over 1.5x 10 to 6; at 0 the Spooner grade reverse leaves US 50 for Forest Road 039.
 - **Prefer Dirt.** `paved_penalty` 2 gives 49% unpaved (quiet) and 37% (busy). Higher values add
   detours quickly (3: 29 and 13 routes over 1.5x). The Marlette Flume Trail is chosen in scenario 5
   at 2; in scenario 6 it needs 2.25 (forward) to 3 (reverse), which costs four to six more routes over 1.5x,

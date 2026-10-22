@@ -8,38 +8,38 @@
   "scenarios": {
     "1": {
       "use_hills": 0.5,
-      "use_roads": 0,
+      "use_roads": 0.1,
       "maneuver_penalty": 2,
       "unpaved_penalty": 1
     },
     "2": {
       "use_hills": 0.5,
-      "use_roads": 1,
+      "use_roads": 0.8,
       "maneuver_penalty": 2,
-      "unpaved_penalty": 1
+      "unpaved_penalty": 0.25
     },
     "3": {
       "use_hills": 0.5,
-      "use_roads": 0,
+      "use_roads": 0.1,
       "maneuver_penalty": 2,
-      "unpaved_penalty": 2.5
+      "unpaved_penalty": 8
     },
     "4": {
       "use_hills": 0.5,
-      "use_roads": 1,
+      "use_roads": 0.8,
       "maneuver_penalty": 2,
-      "unpaved_penalty": 1.5
+      "unpaved_penalty": 8
     },
     "5": {
       "use_hills": 0.5,
-      "use_roads": 0,
+      "use_roads": 0.1,
       "maneuver_penalty": 2,
       "bicycle_type": "Mountain",
       "paved_penalty": 2
     },
     "6": {
       "use_hills": 0.5,
-      "use_roads": 1,
+      "use_roads": 0.8,
       "maneuver_penalty": 2,
       "bicycle_type": "Mountain",
       "paved_penalty": 2
