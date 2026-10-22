@@ -8,9 +8,10 @@ are in `engine/tests/policy_test.cc`.
 
 ## The cost
 
-The builder resamples each edge's shape every 30 m (bridges and tunnels are interpolated linearly
-between their ends) and reads the DEM at each point. The cost of a climb of `rise` metres over
-`run` metres is the convex grade integral in `bikesy_policy.h`:
+The builder resamples each edge's shape every 30 m and reads the DEM at each point. Bridges and
+tunnels are not costed from those samples: the whole structure is replaced by a straight line between
+the points where it meets the ground (see [Bridges and tunnels](#bridges-and-tunnels)). The cost of a
+climb of `rise` metres over `run` metres is the convex grade integral in `bikesy_policy.h`:
 
 ```
 cost = run · (max(0, rise / run) / 0.05)³
@@ -152,6 +153,74 @@ grade, and so the cube, is reduced.
   climb at least 20 m and 20% more than the 10 m reference route, against 11 today.
 - A grade cap does not help with the short-edge tail and would treat real 25 to 35% streets as
   one class.
+
+## Bridges and tunnels
+
+The DEM does not know about decks. Under a bridge it reads the water surface, the sea floor where
+the tiles carry bathymetry (the Golden Gate Bridge reads -95 m at mid-span against a 67 m deck) or the
+valley floor; over a tunnel it reads the hill. Costed as sampled, a bridge is a deep valley with a
+cliff at each end, and the cube makes the crossing expensive enough to send routes round by another
+bridge.
+
+The builder therefore straightens structures. Since the first release it did so per edge: for every
+edge Valhalla flags as `bridge` or `tunnel`, the interior samples were replaced by a line between the
+edge's own two end samples. That is not enough, for two reasons found on the Oakland Estuary:
+
+- **The flag misses some spans.** The graph build only flags `bridge=yes`. The main spans of the
+  Park Street, Fruitvale Avenue and High Street bridges are `bridge=movable` and were costed from the
+  DEM (-6 to -9 m). Across the SF region, 423 flagged bicycle edges (65 km) sag 3 m or more below
+  both ends in the raw DEM, and the unflagged `bridge=movable`, `viaduct`, `cantilever` and
+  `covered` edges add only a handful, so the flag is right far more often than not; but every miss
+  is on a crossing with no alternative.
+- **A mid-structure node is over water too.** A long bridge is several edges, and the span and its
+  approaches are separate ways. The node where two bridge edges meet reads the water, so a flagged
+  approach interpolated between its own ends still climbs out of the water: the Park Street approach
+  (29 m, `bridge=yes`) ran from 3.2 m on the street to -1.9 m at the span, a false 8.5% grade and 285
+  units, about 1.1 km of flat road in the hill-averse scenarios. Flattening the span alone would not
+  have fixed the crossing.
+
+Now `bikesy::resolve_structures` (in `bikesy_profile.h`) works on the whole graph before any edge is
+costed:
+
+1. **Members.** Every flagged edge is part of a structure. An unflagged edge of at most 250 m
+   (`kStructureGapMaxLength`) whose both end nodes also touch a flagged edge is a candidate gap:
+   the shape of a movable span between two `bridge=yes` approaches.
+2. **Ground nodes.** Nodes are merged across hierarchy levels, so a path bridge sees the arterial it
+   meets on another level. A node is ground if any edge at it is not a structure member, or if it
+   lies on the data boundary or outside the tile set. Every other node of a structure is interior.
+3. **Straightening.** Each interior node takes the inverse-distance weighted mean of the heights of
+   the ground nodes reachable through its structure, with distance measured along the structure. On
+   a simple chain this is exact linear interpolation between the two ends; a dead-end pier takes the
+   height of its one ground node; a structure with no ground node (all of it on the data boundary)
+   keeps its DEM heights. Every member edge is then a line between its two node heights.
+4. **Gap check.** A candidate gap whose raw DEM samples do not average at least 2 m
+   (`kStructureGapMinSag`) below that line is a piece of ground between two bridges, not a span; it
+   is dropped and the structure is straightened again without it. In SF 704 candidates reduce to 58
+   spans, in Tahoe 50 to 3.
+
+The 35 m / 60 m filter then runs on the straightened profile as on any other, each direction by its
+own pass, so an edge's two costs still do not depend on how its way was digitised.
+
+What this does and does not do:
+
+- The three estuary bridges cost under 2 units in every direction (they were 811, 644, 285, 248,
+  166, 124 and 38 units on their approach pieces). Region-wide, SF's 14,633 structure edges fall
+  from 282,000 to 129,000 units in the bicycle directions; Tahoe's 1,094 from 158,000 to 151,000.
+  Outside structures nothing changes.
+- Climb a bridge really has is kept between its ground ends: an approach that rises 10 m to the deck
+  still costs 10 m of climb, spread along the structure. What is lost is a hump inside a structure
+  whose ends are both low, such as the deck camber of a long bridge over a shipping channel; the DEM
+  cannot see it either, and no route choice depends on it since the bridge is the only crossing.
+- On land structures with many ground contacts (an elevated interchange), the interpolation
+  redistributes cost between the pieces; the total climb between ground nodes is unchanged. Six
+  bicycle edges in SF and one in Tahoe gain more than 100 units this way, the largest 1,540.
+- Ordinary roads that dip into a valley are untouched: the DEM sag alone never makes an edge a
+  structure, because 4,700 SF edges (2,900 km) and 2,500 Tahoe edges sag 3 m or more below both ends
+  and are real valleys.
+- Not fixed: a ground node whose own DEM cell is water or rock, such as the Cave Rock tunnel portals
+  on US 50 (the portal sample sits in the cliff, 21 m above the road), still costs the adjoining
+  edge. The graph build could also flag `bridge=movable` and the other `bridge=*` values; with this
+  change that is no longer needed for the hill cost, and it would be a graph release.
 
 ## Releasing
 
