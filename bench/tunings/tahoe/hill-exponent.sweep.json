@@ -1,0 +1,12 @@
+{
+  "description": "Grade exponent of the hill cost on the current scenarios. Policy files are built by build_policy with its optional hill_exponent argument (3 is the default cubic); they live outside Git: set BIKESY_POLICY_VARIANTS.",
+  "base": "config",
+  "grid": {
+    "engine.policy": {
+      "e3": "${BIKESY_POLICY_VARIANTS}/e3.bin",
+      "e2.5": "${BIKESY_POLICY_VARIANTS}/e2.5.bin",
+      "e2": "${BIKESY_POLICY_VARIANTS}/e2.bin",
+      "e1.5": "${BIKESY_POLICY_VARIANTS}/e1.5.bin"
+    }
+  }
+}

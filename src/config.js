@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 export const REGION_PATTERN = /^[a-z][a-z0-9-]{0,47}$/;
 export const US_STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ');
 // Every key a region config may contain; see docs/REGIONS.md#region-config-reference.
-const CONFIG_KEYS = ['region', 'bounds', 'bounds_inset', 'admin_states', 'scenarios', 'engine_policy', 'readiness'];
+const CONFIG_KEYS = ['region', 'bounds', 'bounds_inset', 'admin_states', 'scenarios', 'engine_policy', 'readiness', 'hill_cost', 'paved_surface_defaults'];
 const SIDES = ['left', 'bottom', 'right', 'top'];
 
 // Region configs are config/*.json files with a `region` key matching the file name.
@@ -49,6 +49,58 @@ export function deriveBounds(config) {
   return result;
 }
 
+export const BICYCLE_TYPES = ['Road', 'Cross', 'Hybrid', 'Mountain'];
+export const SURFACE_PENALTY_KEYS = ['unpaved_penalty', 'paved_penalty'];
+export const MAX_SURFACE_PENALTY = 10;
+
+// Surface-related passthrough keys. Stock Valhalla silently replaces an out-of-range
+// avoid_bad_surfaces with its default, and the unpaved_penalty/paved_penalty keys clamp to 0-10 in
+// the engine and drop non-finite values, so a typo would otherwise change routing without notice.
+// Reject out-of-range values here. See docs/REGIONS.md#surface-preference.
+function validateSurfaceOptions(id, options) {
+  if (Object.hasOwn(options, 'bicycle_type') && !BICYCLE_TYPES.includes(options.bicycle_type)) {
+    throw new Error(`Invalid bicycle_type in scenario ${id}; use one of ${BICYCLE_TYPES.join(', ')}`);
+  }
+  const ranged = { avoid_bad_surfaces: 1, ...Object.fromEntries(SURFACE_PENALTY_KEYS.map(key => [key, MAX_SURFACE_PENALTY])) };
+  for (const [key, max] of Object.entries(ranged)) {
+    if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > max)) {
+      throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${max}`);
+    }
+  }
+  if (!SURFACE_PENALTY_KEYS.some(key => Object.hasOwn(options, key))) return;
+  // With either penalty the engine drops the stock avoid_bad_surfaces cost term; only its
+  // value 1 still matters (it excludes surfaces worse than the bicycle type allows).
+  if (options.avoid_bad_surfaces > 0 && options.avoid_bad_surfaces < 1) {
+    throw new Error(`Invalid avoid_bad_surfaces in scenario ${id}; it has no cost effect with unpaved_penalty/paved_penalty, so omit it or use 0 or 1`);
+  }
+  // Valhalla's explicit shortest means distance only; Bikesy's implicit shortest mode
+  // (use_roads 1 and use_hills 1) keeps surface penalties.
+  if (Object.hasOwn(options, 'shortest') && options.shortest !== false) {
+    throw new Error(`Invalid shortest in scenario ${id}; it cannot be combined with unpaved_penalty/paved_penalty`);
+  }
+}
+
+// Busy-road preference (docs/REGIONS.md#busy-roads): busy_penalty adds to the edge factor of
+// fast trunk, primary and secondary roads. It needs the engine patch; without it costs are stock.
+export const BUSY_ROAD_KEYS = ['busy_penalty'];
+export const MAX_BUSY_PENALTY = 10;
+function validateBusyRoadOptions(id, options) {
+  for (const key of BUSY_ROAD_KEYS) {
+    if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > MAX_BUSY_PENALTY)) {
+      throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${MAX_BUSY_PENALTY}`);
+    }
+  }
+  if (!BUSY_ROAD_KEYS.some(key => Object.hasOwn(options, key))) return;
+  // The engine returns pure distance in Valhalla's shortest mode and in Bikesy's implicit shortest
+  // mode (use_roads 1 and use_hills 1), so the penalty would be silently ignored.
+  if (Object.hasOwn(options, 'shortest') && options.shortest !== false) {
+    throw new Error(`Invalid shortest in scenario ${id}; it cannot be combined with busy_penalty`);
+  }
+  if (options.use_roads === 1 && options.use_hills === 1) {
+    throw new Error(`Invalid scenario ${id}; busy_penalty with use_roads 1 and use_hills 1 (shortest mode) would have no effect`);
+  }
+}
+
 // Validate a parsed region config and return its runtime settings. Errors name the
 // offending key so a new region can be corrected without reading this code.
 export function validateRegionConfig(config) {
@@ -58,6 +110,19 @@ export function validateRegionConfig(config) {
   const unknown = Object.keys(config).filter(key => !CONFIG_KEYS.includes(key));
   if (unknown.length) {
     throw new Error(`Unknown config key(s) ${unknown.join(', ')}; allowed: ${CONFIG_KEYS.join(', ')}`);
+  }
+  if (Object.hasOwn(config, 'hill_cost')) {
+    // Build-time only: shapes the region's bikesy-policy.bin (docs/HILL-COST.md); routing never reads it.
+    const hill = config.hill_cost;
+    if (!hill || typeof hill !== 'object' || Array.isArray(hill) ||
+        Object.keys(hill).some(key => key !== 'exponent') ||
+        !(Number.isFinite(hill.exponent) && hill.exponent >= 1 && hill.exponent <= 3)) {
+      throw new Error('Invalid hill_cost; use {"exponent": N} with N from 1 to 3 (3 is the default)');
+    }
+  }
+  if (Object.hasOwn(config, 'paved_surface_defaults') && typeof config.paved_surface_defaults !== 'boolean') {
+    // Build-time only: import profile option (scripts/bicycle-surface-defaults.lua); routing never reads it.
+    throw new Error('Invalid paved_surface_defaults; use true or false');
   }
   if (config.engine_policy !== 'bikesy-distance-v1') {
     throw new Error('Invalid engine policy; engine_policy must be "bikesy-distance-v1"');
@@ -96,6 +161,8 @@ export function validateRegionConfig(config) {
     if (Object.hasOwn(options, 'maneuver_penalty') && (!Number.isFinite(options.maneuver_penalty) || options.maneuver_penalty < 0)) {
       throw new Error(`Invalid maneuver_penalty in scenario ${id}; use a nonnegative number`);
     }
+    validateSurfaceOptions(id, options);
+    validateBusyRoadOptions(id, options);
   }
   const runtimeConfig = { ...config, bounds: b, dataBounds: config.bounds, region };
   readinessRequest(runtimeConfig);

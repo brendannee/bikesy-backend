@@ -14,15 +14,15 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../src/config.js';
 import { decode, encode } from '../src/polyline.js';
-import { BENCH_DIR, DEFAULT_SETS, expandTrips, loadCatalogs, matchesModes, pairsFileSpecs } from './lib/catalog.mjs';
+import { BENCH_DIR, DEFAULT_SETS, expandTrips, loadCatalogs, loadReferencePoints, matchesModes, pairsFileSpecs } from './lib/catalog.mjs';
 import { createCache, hashKey } from './lib/cache.mjs';
 import { engineIdentity, imagePolicy, startEngine, stopEngine, waitForEngine } from './lib/engine.mjs';
-import { lineLength, parseGpx, preparePolygons, similarity, simplify } from './lib/geo.mjs';
+import { lineLength, preparePolygons, similarity, simplify } from './lib/geo.mjs';
 import { createApiSource, createValhallaSource, fetchAttributes, valhallaRequest } from './lib/sources.mjs';
 import { loadTunings } from './lib/tunings.mjs';
 import { computeMetrics, stressClass, surfaceClass } from './metrics.mjs';
 import { evaluateExpectations } from './expectations.mjs';
-import { computeAggregates } from './aggregates.mjs';
+import { attachFastestTwins, computeAggregates } from './aggregates.mjs';
 
 // Detour baselines, routed through the same adapter path (same access rules, no ferries):
 // the shortest rideable route (Valhalla's distance-only costing, Hybrid bicycle, which
@@ -119,7 +119,7 @@ async function main() {
   const areas = existsSync(areasPath) ? { wilderness: preparePolygons(JSON.parse(readFileSync(areasPath, 'utf8')).features) } : {};
   const references = new Map();
   for (const trip of trips) for (const ref of trip.pair.references ?? []) {
-    if (!references.has(ref.path)) references.set(ref.path, { points: parseGpx(readFileSync(ref.path, 'utf8')) });
+    if (!references.has(ref.path)) references.set(ref.path, { points: loadReferencePoints(ref) });
   }
 
   // Group tunings by the engine they need. API tunings map-match on the default engine.
@@ -166,6 +166,7 @@ async function main() {
       r.same_as = r.ok ? group.filter(o => o !== r && o.ok && similarity(r._points, o._points) >= SAME_ROUTE_SIMILARITY).map(o => o.mode) : [];
     }
   }
+  attachFastestTwins(results, tunings);
   const aggregates = [];
   for (const catalog of catalogs) for (const tuning of tunings) for (const mode of tuning.modes) {
     const routes = results.filter(r => r.set === catalog.set && r.tuning === tuning.name && r.mode === mode.name);
@@ -191,7 +192,7 @@ async function main() {
 
 async function runEngineGroup({ engine, identity, group, trips, regionConfig, cache, concurrency, areas, references, results, geometry }) {
   const local = createValhallaSource({ regionConfig, valhallaUrl: engine.url });
-  const attributeCache = (shape, costing, matched) => cache.memo(hashKey({ kind: 'attributes', engine: identity.key, shape, costing, matched }),
+  const attributeCache = (shape, costing, matched) => cache.memo(hashKey({ kind: 'attributes', attrs: 'density', engine: identity.key, shape, costing, matched }),
     () => fetchAttributes(engine.url, shape, costing, { matched }));
 
   // A local route record with attributes, from cache when possible.
@@ -279,7 +280,8 @@ function writeCsv(path, rows) {
 }
 
 function printSummary(aggregates) {
-  const columns = ['trips', 'no_route', 'median_detour', 'p90_detour', 'pathological', 'pathological_firm', 'high_stress_km', 'unpaved_share', 'class_i_share', 'expectation_pass_rate', 'same_route_share'];
+  const columns = ['trips', 'no_route', 'median_detour', 'p90_detour', 'pathological', 'pathological_firm', 'high_stress_km', 'arterial_share', 'busy_share', 'unpaved_share', 'class_i_share', 'expectation_pass_rate', 'same_route_share',
+    'median_detour_vs_fastest', 'p90_detour_vs_fastest', 'mean_residual_busy_share', 'did_not_avoid_share', 'detour_bought_nothing_share', 'median_avoidance_efficiency'];
   console.log('\n' + ['set', 'tuning', 'mode', ...columns].join('\t'));
   for (const a of aggregates) console.log([a.set, a.tuning, a.mode, ...columns.map(c => a[c] ?? '-')].join('\t'));
 }

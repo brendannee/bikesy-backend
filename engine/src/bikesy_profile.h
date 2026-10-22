@@ -5,6 +5,7 @@
 // How the two constants were chosen: docs/HILL-COST.md.
 #include "bikesy_policy.h"
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -139,6 +140,20 @@ inline std::vector<double> straight_profile(double ha, double hb, size_t n) {
   return h;
 }
 
+// Exponent of the grade term in the cost (docs/HILL-COST.md). 3 is the original cubic;
+// a region may choose another through `hill_cost.exponent` in its config.
+constexpr double kHillExponent = 3.0;
+
+// Uphill cost of a climb of `rise` metres over `run` metres: run * (grade / 0.05)^exponent.
+// Exponent 3 is exactly positive_grade_integral, so regions that do not set one keep
+// bit-identical policy data. A steady 5% grade costs about 1 unit per metre at any exponent.
+inline double grade_cost(double rise, double run, double exponent = kHillExponent) {
+  if (exponent == kHillExponent) return positive_grade_integral(rise, run);
+  if (!(run > 0) || !std::isfinite(rise) || !std::isfinite(run) || !(exponent >= 1))
+    throw std::runtime_error("Invalid Bikesy elevation segment");
+  return run * std::pow(std::max(0.0, rise / run) / 0.05, exponent);
+}
+
 // Indices of the profile's turning points: the first and last samples, plus
 // every extreme that the profile then leaves by at least `band` metres.
 inline std::vector<size_t> hill_turning_points(const std::vector<double>& h, double band) {
@@ -164,12 +179,12 @@ inline std::vector<size_t> hill_turning_points(const std::vector<double>& h, dou
 // convex grade integral of the mean grade between consecutive turning points.
 // `segments`, if given, receives the number of turning-point segments.
 inline double profile_uphill_one_way(const std::vector<double>& h, double ds, double band, double min_run,
-                                     size_t* segments = nullptr) {
+                                     size_t* segments = nullptr, double exponent = kHillExponent) {
   const auto at = hill_turning_points(h, band);
   double cost = 0;
   for (size_t j = 1; j < at.size(); ++j) {
     const double run = std::max(ds * (at[j] - at[j - 1]), min_run);
-    cost += positive_grade_integral(h[at[j]] - h[at[j - 1]], run);
+    cost += grade_cost(h[at[j]] - h[at[j - 1]], run, exponent);
   }
   if (segments) *segments = at.size() - 1;
   return cost;
@@ -183,11 +198,11 @@ inline double profile_uphill_one_way(const std::vector<double>& h, double ds, do
 // `segments`, if given, receives the forward pass's segment count.
 inline std::pair<double, double> profile_uphill(const std::vector<double>& h, double length,
                                                 double band = kHillDeadBand, double min_run = kHillMinRun,
-                                                size_t* segments = nullptr) {
+                                                size_t* segments = nullptr, double exponent = kHillExponent) {
   if (h.size() < 2 || !(length > 0)) throw std::runtime_error("Invalid Bikesy elevation profile");
   const double ds = length / (h.size() - 1);
-  const double fw = profile_uphill_one_way(h, ds, band, min_run, segments);
+  const double fw = profile_uphill_one_way(h, ds, band, min_run, segments, exponent);
   const std::vector<double> r(h.rbegin(), h.rend());
-  return {fw, profile_uphill_one_way(r, ds, band, min_run)};
+  return {fw, profile_uphill_one_way(r, ds, band, min_run, nullptr, exponent)};
 }
 }

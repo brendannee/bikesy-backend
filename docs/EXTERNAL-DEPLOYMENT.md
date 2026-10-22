@@ -21,7 +21,8 @@ The Dockerfile includes Node and osmium; an older cached toolchain may not.
 Public base images are pinned, but apt packages are not frozen. Record the resulting
 toolchain digest and rerun validation rather than expecting historical engine bytes.
 (A toolchain rebuilt on 2026-10-14 did reproduce the historical engine SHA
-`82c32a12…`, but that is not guaranteed for later apt states.)
+`82c32a12…` from the patch before the surface preference, but that is not guaranteed
+for later apt states.)
 
 `scripts/build-region.sh` (see [REGIONS.md](REGIONS.md#one-command-build-scriptsbuild-regionsh))
 runs these checks and every build step below; the commands in this document remain

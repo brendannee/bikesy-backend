@@ -6,9 +6,9 @@ For Tahoe, new regions or separate regional application images, follow [REGIONS.
 
 ## Rebuild prerequisites
 
-The tested build is Valhalla 3.5.1, source commit `d377c8ace9ea88dfa989466258bf738b1080f22a`, runtime digest in `engine/source-lock.json`. `engine/bikesy-3.5.1.patch` includes both the distance/ferry policy and counted stairs. `python3 engine/apply_patch.py --check` reconstructs it with strict context matching and validates the vendored upstream and complete patched source hashes. It does not download anything. `--apply` explicitly restores the two patched upstream source files.
+The tested build is Valhalla 3.5.1, source commit `d377c8ace9ea88dfa989466258bf738b1080f22a`, runtime digest in `engine/source-lock.json`. `engine/bikesy-3.5.1.patch` includes the distance/ferry policy, counted stairs, the opt-in two-class [surface preference](REGIONS.md#surface-preference) and the opt-in [busy-road preference](REGIONS.md#busy-roads). `python3 engine/apply_patch.py --check` reconstructs it with strict context matching and validates the vendored upstream and complete patched source hashes. It does not download anything. `--apply` explicitly restores the two patched upstream source files.
 
-The exact cached amd64 toolchain on the validation Mac is `sha256:0e8d3acfef285220db8359b346f8e4c33a78cbc96913a154d2ccc685b1f63953`. Compiling this package in that image reproduced the deployed engine SHA `82c32a1218531ac87de394699791212e32989147f3c17b705140cbac35fa755d` exactly. Another machine must obtain that toolchain backup or build and separately validate `engine/Dockerfile.toolchain`. Its upstream runtime is pinned, but apt package versions are not frozen; rebuilding that toolchain is not claimed to reproduce the same binary bytes. Do not install/build it merely to deploy ordinary JS changes.
+The exact cached amd64 toolchain on the validation Mac is `sha256:0e8d3acfef285220db8359b346f8e4c33a78cbc96913a154d2ccc685b1f63953`. Compiling the package as released (before the surface preference was added) in that image reproduced the deployed engine SHA `82c32a1218531ac87de394699791212e32989147f3c17b705140cbac35fa755d` exactly; the surface preference changes the engine bytes, so a release with it needs a new data package. Another machine must obtain that toolchain backup or build and separately validate `engine/Dockerfile.toolchain`. Its upstream runtime is pinned, but apt package versions are not frozen; rebuilding that toolchain is not claimed to reproduce the same binary bytes. Do not install/build it merely to deploy ordinary JS changes.
 
 Allow 2 CPUs, 6 GiB RAM and roughly 8 GiB temporary disk. Raw rebuild inputs are excluded from this source archive and from the runtime image:
 
@@ -41,7 +41,41 @@ docker rm -f bikesy-data-rebuild
 docker build --platform linux/amd64 -t bikesy-routing-data:candidate build/runtime
 ```
 
-The rebuild compiles engine/helpers; verifies 27 access and 13 facility Lua fixtures; reconstructs the regional admin DB with US defaults; builds graph tiles; checks driving side and four facility ways; rebinds 13 directed exceptions by OSM way, orientation and full geometry; fingerprints the graph before applying the narrow access overlay; verifies allowed edge differences; and rebuilds hill/connectivity plus stair indexes (hill cost: `docs/HILL-COST.md`). The policy extraction buffer is **-123.15, 37.20, -121.51, 38.42**, larger than service bounds. The full-graph engine cost check must pass before a hash-bound `gated-build.json` receipt is written. The packager requires that receipt and matching inputs/outputs.
+The rebuild compiles engine/helpers; verifies 27 access, 13 facility and 23 surface-default Lua fixtures; reconstructs the regional admin DB with US defaults; builds graph tiles; checks driving side and four facility ways; rebinds 13 directed exceptions by OSM way, orientation and full geometry; fingerprints the graph before applying the narrow access overlay; verifies allowed edge differences; and rebuilds hill/connectivity plus stair indexes (hill cost: `docs/HILL-COST.md`). The policy extraction buffer is **-123.15, 37.20, -121.51, 38.42**, larger than service bounds. The full-graph engine cost check must pass before a hash-bound `gated-build.json` receipt is written. The packager requires that receipt and matching inputs/outputs.
+
+**Surface defaults (opt-in).** A region whose config sets `"paved_surface_defaults": true` (Tahoe) gets
+`scripts/bicycle-surface-defaults.lua` appended to its import profile, after the access and
+facility wrapper. It tags as paved the ways that Valhalla would otherwise call compacted but that
+are paved for riding: untagged `highway=footway` sidewalks and crossings (unless `tracktype`,
+`sac_scale` or `mtb:scale` imply a surface), `surface=wood` or `boardwalk` (wooden bridges and
+boardwalks, as in the frontend's overlays), and untagged `bridge=boardwalk` ways. `mtb:scale` still
+overrides the surface, and access never changes; `scripts/check-surfaces.py` runs 23 fixtures
+through the real pinned Lua and asserts the filter and every non-surface field match the access
+wrapper's (`lua-surface-tests.log` in the evidence). Without the option the combined profile and
+`graph-profile.lock.json` are byte-identical to the facilities-only profile
+(`bikesy-bicycle-access-v2-facilities`); with it the lock names `bikesy-bicycle-access-v3-surfaces`
+and adds the layer's hash. SF does not set it. Effects, on the Tahoe 2026-10-19 graph with the
+tuned scenarios (3,732 routes over four sets): 48 differ (1.3%; 35 of the 2,532 routes in the curated, sampled and realistic sets). Only four are in
+scenarios 1 and 2 (the earlier estimate of about 3 in 1,120 default routes holds); the rest are in the
+surface-preference scenarios, where paved or unpaved class changes the cost. Most differ by a few hundred metres, and most are shorter.
+
+- Untagged crossings were already paved (pedestrian-crossing edges default to paved),
+  and untagged sidewalks without a `bicycle` tag are pedestrian-only, so for bicycles
+  the change mostly concerns wooden bridges (114 `surface=wood` ways) and about 0.4 km
+  of bike-legal untagged sidewalk.
+- Paths, cycleways, tracks and footways keep their cost; their time estimates use
+  Hybrid's paved speed (about 22% faster than compacted).
+- With the surface preference keys, a boardwalk now counts as paved, so Prefer Dirt avoids it and
+  Prefer Paved uses it; the biggest effects are a few Prefer Dirt routes (Tahnu Leweh to Seven Owners
+  Park reverse, 1.17 to 1.53 detour) and some Prefer Paved routes that gain a boardwalk shortcut.
+- Valhalla halves the stored speed of edges from `paved_rough` down, and bicycle
+  costing uses that speed as traffic stress on road-class edges. Wooden road and
+  service bridges therefore cost 20-40% more per edge when `use_roads` is below 1
+  (Tahoe scenario 1). With `use_roads` 1 (scenario 2) costs are unchanged. This is
+  intended: the bridge carries the same traffic as the road on either side, and the
+  lower stress only came from the halved speed. Keeping road bridges compacted would
+  also make the surface preference (`unpaved_penalty`/`paved_penalty`) treat them as
+  unpaved.
 
 The source release was compiled and route-tested; a full graph rebuild was not repeated during packaging. The unchanged construction logic was previously reproduced in the isolated experiment. Newly added receipt/package steps need a fresh build receipt for a future data release. Preserve every failed gate; never bypass assertions by substituting old graph IDs or widening access.
 
