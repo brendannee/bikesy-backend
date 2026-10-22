@@ -8,7 +8,7 @@
   "runtime_files": {
     "serve.mjs": "df485cd4df2d45fc24636448f8407d5f6b9502a8b5a191277464689736f9e811",
     "src/adapter.js": "07048485b95378760ba2e13e222d5d061809c39b664c459170b95ae1d334ad82",
-    "src/config.js": "ae0bc980c48faa46606d673bf6236096db52cb027438312d0173cc8189579c25",
+    "src/config.js": "c9e5c1199cd868867f2381c508019785fa51cd7ced1a971d1171bd446bd740ec",
     "src/polyline.js": "b944a28117db5b3e0dabe3d3b2ff75ad3deb7bd4cc48e7008f46284a9b7b1cb6",
     "src/server.js": "0ab1c0fc23ca804ca377eb4d9c415b63de1b50d69d25dafb0f312ffc43d53262",
     "src/startup-timing.js": "f986b714acb3c300420bc6f44cb367af39b56750ab42ee6186188c3ad052c3fd",
@@ -30,5 +30,5 @@
     "config/sf.json": "ba9b88be5cfbf4045843b352d0c9ced59c1899b904fd115bf9e1fa22ab3d0045"
   },
   "source_changed_from_deployed": true,
-  "source_updated_at": "2026-10-22T07:27:59.211Z"
+  "source_updated_at": "2026-10-22T08:21:27.357Z"
 }
