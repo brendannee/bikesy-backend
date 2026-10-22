@@ -210,6 +210,31 @@ constexpr ranged_default_t<float> kBSSCostRange{0, kDefaultBssCost, kMaxPenalty}
 constexpr ranged_default_t<float> kBSSPenaltyRange{0, kDefaultBssPenalty, kMaxPenalty};
 // Bikesy two-class surface preference: additive edge factor, same units as kSurfaceFactors.
 constexpr ranged_default_t<float> kSurfaceClassPenaltyRange{0.0f, 0.0f, 10.0f};
+// Bikesy busy-road preference (opt-in): additive edge factors on busy roads (everywhere, and
+// in town only), and the share of the cycle lane/shoulder relief they keep. See BusyRoadWeight,
+// TownWeight and ParseBicycleCostOptions.
+constexpr ranged_default_t<float> kBusyPenaltyRange{0.0f, 0.0f, 10.0f};
+constexpr ranged_default_t<float> kBusyLaneReliefRange{0.0f, 1.0f, 1.0f};
+
+// Share of a busy road that counts as in town, 0 to 1, from the edge's road density (0-15):
+// 0 up to density 2 (open country), ramping to 1 at density 5 and above.
+inline float TownWeight(const DirectedEdge* edge) {
+  return std::min(1.0f, std::max(0.0f, (static_cast<float>(edge->density()) - 2.0f) / 3.0f));
+}
+
+// How much an edge counts as a busy road, 0 to 1: motorway, trunk, primary and secondary
+// road, ramp and turn-channel edges, ramped by the edge's speed from 0 at 40 km/h (25 mph)
+// to 1 at 56 km/h (35 mph) and above. Everything else, including service roads, is 0.
+inline float BusyRoadWeight(const DirectedEdge* edge) {
+  if (edge->classification() > baldr::RoadClass::kSecondary) {
+    return 0.0f;
+  }
+  const Use use = edge->use();
+  if (use != Use::kRoad && use != Use::kRamp && use != Use::kTurnChannel) {
+    return 0.0f;
+  }
+  return std::min(1.0f, std::max(0.0f, (static_cast<float>(edge->speed()) - 40.0f) / 16.0f));
+}
 
 BaseCostingOptionsConfig GetBaseCostOptsConfig() {
   BaseCostingOptionsConfig cfg{};
@@ -421,6 +446,11 @@ public:
   bool surface_classes_;
   float unpaved_penalty_;
   float paved_penalty_;
+  // Bikesy busy-road preference; off unless the request had busy_penalty or busy_lane_relief.
+  bool busy_roads_;
+  float busy_penalty_;
+  float busy_lane_relief_;
+  float busy_town_penalty_;
 
 protected:
   /**
@@ -477,6 +507,13 @@ BicycleCost::BicycleCost(const Costing& costing)
                      costing_options.has_hgv_no_access_penalty_case();
   unpaved_penalty_ = costing_options.low_class_penalty();
   paved_penalty_ = costing_options.hgv_no_access_penalty();
+  // Present only when the request had busy_penalty or busy_lane_relief (oneof case = presence).
+  busy_roads_ = costing_options.has_use_primary_case() || costing_options.has_use_highways_case() ||
+                costing_options.has_use_trails_case();
+  busy_town_penalty_ = costing_options.has_use_trails_case() ? costing_options.use_trails() : 0.0f;
+  busy_penalty_ = costing_options.has_use_primary_case() ? costing_options.use_primary() : 0.0f;
+  busy_lane_relief_ =
+      costing_options.has_use_highways_case() ? costing_options.use_highways() : 1.0f;
 
   // Set the surface speed factors for the bicycle type.
   if (type_ == BicycleType::kRoad) {
@@ -643,6 +680,9 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
   // Represents the amount of accommodation that is being made for bicycling
   float accommodation_factor = 1.0f;
 
+  // Bikesy busy-road weight of this edge (0 unless the busy-road preference was requested)
+  float busy = 0.0f;
+
   // Special use cases: cycleway, footway, path, living street, track
   if (edge->use() == Use::kCycleway || edge->use() == Use::kFootway || edge->use() == Use::kPath) {
     // Differentiate how segregated the cycleway/path is from pedestrians
@@ -659,6 +699,17 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
     // Favor roads where a cycle lane and/or shoulder exists
     accommodation_factor =
         cyclelane_factor_[edge->shoulder() * 4 + static_cast<uint32_t>(edge->cyclelane())];
+
+    // Bikesy busy roads keep only busy_lane_relief of the cycle lane/shoulder relief, so a
+    // lane on a fast arterial still beats no lane but no longer makes it nearly as cheap as
+    // a quiet street.
+    if (busy_roads_) {
+      busy = BusyRoadWeight(edge);
+      if (busy > 0.0f && busy_lane_relief_ < 1.0f) {
+        accommodation_factor = 1.0f - (1.0f - accommodation_factor) *
+                                          (1.0f - busy * (1.0f - busy_lane_relief_));
+      }
+    }
 
     // Penalize roads that have more than one lane (in the direction of travel)
     if (edge->lanecount() > 1) {
@@ -707,6 +758,14 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
     factor +=
         avoid_bad_surfaces_ * kSurfaceFactors[static_cast<uint32_t>(edge->surface()) -
                                               static_cast<uint32_t>(minimal_surface_penalized_)];
+  }
+
+  // Bikesy busy-road penalty: additive like the surface classes, so a lane still lowers the cost.
+  if (busy > 0.0f) {
+    factor += busy_penalty_ * busy;
+    if (busy_town_penalty_ > 0.0f) {
+      factor += busy_town_penalty_ * busy * TownWeight(edge);
+    }
   }
 
   // Compute bicycle speed. If you have to dismount on the edge then set speed to an average
@@ -927,6 +986,27 @@ void ParseBicycleCostOptions(const rapidjson::Document& doc,
     };
     co->set_low_class_penalty(penalty(unpaved));
     co->set_hgv_no_access_penalty(penalty(paved));
+  }
+
+  // Bikesy busy-road preference: busy_penalty (0-10, additive edge factor on busy roads),
+  // busy_town_penalty (0-10, the same but weighted by TownWeight, so open-country highways
+  // keep their cost) and busy_lane_relief (0-1, the share of the cycle lane/shoulder relief
+  // busy roads keep; 1 is stock). Stored, like the surface classes above, in Costing.Options
+  // floats that bicycle costing and DynamicCost never read: busy_penalty -> use_primary
+  // (field 32), busy_town_penalty -> use_trails (field 33), both motor scooter/motorcycle
+  // only, and busy_lane_relief -> use_highways (field 13, motor vehicles only).
+  // Each is set only when the request names its key; requests without them are unchanged.
+  auto busy_penalty = rapidjson::get_optional<float>(json, "/busy_penalty");
+  if (busy_penalty && std::isfinite(*busy_penalty)) {
+    co->set_use_primary(kBusyPenaltyRange(*busy_penalty));
+  }
+  auto busy_town_penalty = rapidjson::get_optional<float>(json, "/busy_town_penalty");
+  if (busy_town_penalty && std::isfinite(*busy_town_penalty)) {
+    co->set_use_trails(kBusyPenaltyRange(*busy_town_penalty));
+  }
+  auto busy_lane_relief = rapidjson::get_optional<float>(json, "/busy_lane_relief");
+  if (busy_lane_relief && std::isfinite(*busy_lane_relief)) {
+    co->set_use_highways(kBusyLaneReliefRange(*busy_lane_relief));
   }
 }
 

@@ -52,6 +52,16 @@ test('Tahoe has a traffic x trail surface grid of six scenarios', () => {
   assert.equal(bicycle('2').unpaved_penalty, 0.25, 'Fastest Route costs dirt like the Hybrid speed loss');
   assert.equal(bicycle('5').paved_penalty, 2);
   assert.equal(bicycle('6').paved_penalty, 2);
+  // Avoid Busy Roads avoids fast arterials in town (busy_town_penalty) and gives their bike
+  // lanes half the usual relief (busy_lane_relief); Fastest Route keeps stock costs.
+  for (const id of ['1', '3', '5']) {
+    assert.equal(bicycle(id).busy_town_penalty, 2, `scenario ${id}`);
+    assert.equal(bicycle(id).busy_lane_relief, 0.5, `scenario ${id}`);
+    assert.equal(bicycle(id).busy_penalty, undefined, `scenario ${id}`);
+  }
+  for (const id of ['2', '4', '6']) {
+    for (const key of ['busy_penalty', 'busy_town_penalty', 'busy_lane_relief']) assert.equal(bicycle(id)[key], undefined, `scenario ${id} ${key}`);
+  }
   assert.equal(bicycle('5').bicycle_type, 'Mountain');
   assert.equal(bicycle('4').bicycle_type, 'Hybrid');
   q.set('scenario', '7');

@@ -225,6 +225,35 @@ test('surface passthrough keys are validated and reach Valhalla unchanged', () =
     .costing_options.bicycle.unpaved_penalty, undefined);
 });
 
+test('busy-road keys are validated and reach Valhalla unchanged', () => {
+  const base = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
+  const withScenario = options => ({ ...base, scenarios: { ...base.scenarios, 9: { use_hills: 0.5, use_roads: 0.1, ...options } } });
+  for (const options of [{ busy_penalty: 0 }, { busy_penalty: 10 }, { busy_lane_relief: 0 }, { busy_lane_relief: 1 },
+    { busy_town_penalty: 0 }, { busy_town_penalty: 10 }, { busy_penalty: 0.5, busy_town_penalty: 2, busy_lane_relief: 0.5, unpaved_penalty: 8 }]) {
+    assert.doesNotThrow(() => validateRegionConfig(withScenario(options)), JSON.stringify(options));
+  }
+  for (const [options, message] of [
+    [{ busy_penalty: -0.1 }, /Invalid busy_penalty in scenario 9; use a number from 0 to 10/],
+    [{ busy_penalty: 11 }, /Invalid busy_penalty in scenario 9/],
+    [{ busy_penalty: '1' }, /Invalid busy_penalty in scenario 9/],
+    [{ busy_lane_relief: 1.5 }, /Invalid busy_lane_relief in scenario 9; use a number from 0 to 1/],
+    [{ busy_town_penalty: -1 }, /Invalid busy_town_penalty in scenario 9; use a number from 0 to 10/],
+    [{ busy_lane_relief: null }, /Invalid busy_lane_relief in scenario 9/],
+  ]) assert.throws(() => validateRegionConfig(withScenario(options)), message);
+  const config = validateRegionConfig(withScenario({ busy_penalty: 0.5, busy_town_penalty: 2, busy_lane_relief: 0.5 }));
+  const query = new URLSearchParams('lat1=39.1&lng1=-120.39&lat2=39.11&lng2=-120.38&scenario=9');
+  assert.deepEqual(parseQuery(query, config).costing_options.bicycle, {
+    bicycle_type: 'Hybrid', use_hills: 0.5, use_roads: 0.1, busy_penalty: 0.5, busy_town_penalty: 2, busy_lane_relief: 0.5, use_ferry: 0,
+  });
+});
+
+test('SF scenarios never send the busy-road keys', () => {
+  const sf = JSON.parse(readFileSync(new URL('../config/sf.json', import.meta.url)));
+  for (const [id, options] of Object.entries(sf.scenarios)) {
+    for (const key of ['busy_penalty', 'busy_town_penalty', 'busy_lane_relief']) assert.equal(Object.hasOwn(options, key), false, `sf scenario ${id} ${key}`);
+  }
+});
+
 test('build-time options are validated and optional', () => {
   const tahoe = JSON.parse(readFileSync(new URL('../config/tahoe.json', import.meta.url)));
   assert.doesNotThrow(() => validateRegionConfig(tahoe));
