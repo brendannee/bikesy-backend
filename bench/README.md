@@ -79,6 +79,7 @@ on the sampled ones.
 | `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 199 one-way pairs (200 drawn from building and address density, seed 1, minus `s007`, which crosses the mountains and is not a realistic trip; see `removed_pairs` in the file). The baseline for comparisons; do not regenerate it. |
 | `realistic` | `tahoe-realistic.json` (71) | `sf-realistic.json` (70) | Pairs with a `purpose`, a `share` and a relative `weight`. Tahoe: public places weighted by where people searched for routes on the Tahoe Bike Map (2019–2026). SF: commute flows from LODES and ACS. See [Realistic pairs](#realistic-pairs). |
 | `sampled-weighted` | `tahoe-sampled-weighted.json` | `sf-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
+| `slt` | `tahoe-slt.json` (120) | none | 120 one-way pairs with both ends in South Lake Tahoe, Stateline and Meyers (bbox -120.03,38.85,-119.92,38.965), 1-10 km straight line, drawn from building and address density with `--alpha 1.0` (seed 2). For judging Avoid Busy Roads. Opt in with `--sets slt`; the six `rider` pairs of the curated set run alone with `--sets curated --tags rider`. |
 | `user` | `tahoe-user.json` | `sf-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
 
 Pairs from outside the repository join a run with `--pairs-file [NAME=]FILE` (repeatable,
@@ -429,6 +430,8 @@ come from Valhalla 3.5.1 `trace_attributes` on the route's own shape, elevation 
 | `unpaved_km`, `unpaved_share` | Surfaces other than paved_smooth/paved/paved_rough: compacted and worse, which includes untagged paths. |
 | `high_stress_km`, `high_stress_share` | Ridden on a motorway, or on a trunk/primary/secondary road (incl. its ramps and turn channels) with a tagged limit ≥ 45 mph (72 km/h) or with neither a bike lane (`cycle_lane` dedicated/separated) nor a shoulder. Sharrows are not a lane; untagged speed limits count as low. |
 | `arterial_km`, `arterial_share` | Ridden on a motorway, trunk, primary or secondary road (incl. ramps and turn channels), whatever its speed limit, bike lane or shoulder: the busy-road share that "Avoid Busy Roads" questions need when a bike lane keeps an arterial out of `high_stress_km`. |
+| `busy_km`, `busy_share` | Ridden on a motorway/trunk/primary/secondary road (incl. ramps and turn channels) with a tagged limit >= 35 mph (56 km/h), whatever the bike lane or shoulder: the engine's busy-weight definition. Untagged limits never count. |
+| `busy_town_km`, `busy_lowdensity_km` | `busy_km` split by Valhalla `edge.density`: >= 5 (the engine's town gate applies `busy_town_penalty`) and < 5. |
 | `class_i_share` | Paved, car-free path (cycleway, path, footway, pedestrian; not sidewalks) ridden on the bike. |
 | `wilderness_km` | Length inside the region's wilderness polygons (segment midpoints). |
 | `walk_km` | Walking sections (stairs, dismount). |
@@ -451,6 +454,25 @@ median climb, wilderness km, expectations checked and pass rate, pair-weighted m
 and pathological share (for pairs with a `weight`), and **mode separation**
 (`same_route_share`: how often a mode's route is the same as another mode's, i.e. ≥ 95%
 overlap within 20 m both ways). Add one by appending to `AGGREGATES`.
+
+**Avoid Busy against Fastest.** Each route in a `traffic: quiet` mode is compared with the
+route of the same tuning and trip in the `traffic: busy` mode with the same hills and surface
+facets (config scenarios 1-2, 3-4, 5-6) and carries `vs_fastest` in `results.json`:
+`detour_vs_fastest` (distance / Fastest distance), `busy_avoided_km`, `residual_busy_share`
+(busy km / Fastest busy km, null when Fastest has under 0.3 busy km) and `avoidance_efficiency`
+(extra km per busy km avoided, null when under 0.3 km avoided). Aggregates (Avoid Busy modes
+only): `median_detour_vs_fastest`, `p90_detour_vs_fastest`, `mean_residual_busy_share`,
+`did_not_avoid_share` (residual share > 0.5), `detour_bought_nothing_share` (under 0.3 busy km
+avoided at over 1.3x the Fastest distance) and `median_avoidance_efficiency`; `summary.md`
+and the report scorecard show them with `arterial_share` and `busy_share`.
+
+```sh
+npm run bench -- --region tahoe --sets slt --valhalla http://127.0.0.1:18002/ --name slt
+node bench/set-summary.mjs "$BIKESY_BENCH_DIR/runs/$(date +%F)-slt"
+```
+
+Regenerate the set with `node bench/sample-pairs.mjs --region tahoe --pbf tahoe.osm.pbf --count 120
+--seed 2 --alpha 1.0 --min-km 1 --max-km 10 --bbox=-120.03,38.85,-119.92,38.965 --set slt --tag slt`.
 
 ## Report
 

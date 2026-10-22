@@ -51,6 +51,17 @@ export function isArterial(edge) {
   return edge.road_class === 'motorway' || ARTERIALS.has(edge.road_class);
 }
 
+// Busy riding, matching the engine's busy weight: a motorway/trunk/primary/secondary road
+// (incl. ramps and turn channels) ridden on the bike with a tagged limit of 35 mph (56 km/h)
+// or more, whatever its bike lane or shoulder. Untagged limits never count.
+// `density` (0-15, Valhalla edge.density) splits it into town (>= 5, where the engine's town
+// gate applies its busy_town_penalty) and low density (< 5).
+export const BUSY_SPEED_KPH = 56;
+export const TOWN_DENSITY = 5;
+export const isBusy = edge => isArterial(edge) && (edge.speed_limit ?? 0) >= BUSY_SPEED_KPH;
+const isBusyTown = edge => isBusy(edge) && (edge.density ?? 0) >= TOWN_DENSITY;
+const isBusyLowDensity = edge => isBusy(edge) && (edge.density ?? 0) < TOWN_DENSITY;
+
 // Class I: a paved, car-free path ridden on the bike (cycleway, shared-use path or
 // bike-legal footway; not sidewalks).
 const CAR_FREE = new Set(['cycleway', 'path', 'footway', 'pedestrian', 'bridleway', 'mountain_bike']);
@@ -115,6 +126,14 @@ export const METRICS = [
     compute: ({ route }) => km(route.edges, isArterial) },
   { name: 'arterial_share', label: 'Arterial share', unit: '', better: null,
     compute: ({ route }) => share(route.edges, isArterial) },
+  { name: 'busy_km', label: 'Busy road', unit: 'km', better: 'lower',
+    compute: ({ route }) => km(route.edges, isBusy) },
+  { name: 'busy_share', label: 'Busy-road share', unit: '', better: 'lower',
+    compute: ({ route }) => share(route.edges, isBusy) },
+  { name: 'busy_town_km', label: 'Busy road, density >= 5', unit: 'km', better: 'lower',
+    compute: ({ route }) => km(route.edges, isBusyTown) },
+  { name: 'busy_lowdensity_km', label: 'Busy road, density < 5', unit: 'km', better: 'lower',
+    compute: ({ route }) => km(route.edges, isBusyLowDensity) },
   { name: 'class_i_share', label: 'Class I share', unit: '', better: 'higher',
     compute: ({ route }) => share(route.edges, isClassI) },
   { name: 'wilderness_km', label: 'In wilderness', unit: 'km', better: 'lower',

@@ -34,6 +34,36 @@ export const isPathological = r => !r.ok || r.metrics.detour > PATHOLOGICAL_DETO
 // where the shortest rideable route is only short because it takes tracks or trails.
 export const isPathologicalFirm = r => isPathological(r) && !(r.metrics.firm_detour <= PATHOLOGICAL_DETOUR);
 
+// Cross-scenario metrics: each Avoid Busy (traffic 'quiet') route is compared with its Fastest
+// ('busy') twin: the route of the same tuning and trip in the mode with the same hills and
+// surface facets. Stored on the quiet route result as `vs_fastest` (null without a twin).
+export const MIN_BUSY_KM = 0.3, DETOUR_BOUGHT_NOTHING = 1.3, DID_NOT_AVOID = 0.5;
+export function fastestTwinMetrics(quiet, fastest) {
+  if (!quiet.ok || !fastest?.ok) return null;
+  const q = quiet.metrics, f = fastest.metrics;
+  if (!Number.isFinite(q.distance_km) || !f.distance_km || !Number.isFinite(q.busy_km) || !Number.isFinite(f.busy_km)) return null;
+  const avoided = f.busy_km - q.busy_km;
+  return { twin: fastest.mode, detour_vs_fastest: q.distance_km / f.distance_km,
+    busy_avoided_km: avoided,
+    residual_busy_share: f.busy_km >= MIN_BUSY_KM ? q.busy_km / f.busy_km : null,
+    avoidance_efficiency: avoided >= MIN_BUSY_KM ? (q.distance_km - f.distance_km) / avoided : null };
+}
+
+export function attachFastestTwins(results, tunings) {
+  const modes = new Map(tunings.flatMap(t => t.modes.map(m => [`${t.name}|${m.name}`, m.facets])));
+  const byKey = new Map();
+  for (const r of results) byKey.set(`${r.tuning}|${r.trip}|${r.mode}`, r);
+  for (const r of results) {
+    const facets = modes.get(`${r.tuning}|${r.mode}`);
+    if (facets?.traffic !== 'quiet') continue;
+    const twin = tunings.find(t => t.name === r.tuning).modes.find(m => m.facets.traffic === 'busy' && m.facets.hills === facets.hills && m.facets.surface === facets.surface);
+    r.vs_fastest = twin ? fastestTwinMetrics(r, byKey.get(`${r.tuning}|${r.trip}|${twin.name}`)) : null;
+  }
+}
+const twin = (routes, key) => routes.filter(r => r.ok && r.vs_fastest).map(r => r.vs_fastest[key]).filter(Number.isFinite);
+const mean = values => values.length ? sum(values) / values.length : null;
+const twinShare = (routes, test) => { const t = routes.filter(r => r.ok && r.vs_fastest); return t.length ? t.filter(r => test(r.vs_fastest)).length / t.length : null; };
+
 export const AGGREGATES = [
   { name: 'trips', label: 'Trips', format: 'count', compute: routes => routes.length },
   { name: 'no_route', label: 'No route', format: 'count', better: 'lower', compute: routes => routes.filter(r => !r.ok).length },
@@ -51,6 +81,20 @@ export const AGGREGATES = [
     compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'high_stress_km')) / sum(metric(routes, 'distance_km')) : null },
   { name: 'arterial_share', label: 'Arterial share', format: 'share', better: null,
     compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'arterial_km')) / sum(metric(routes, 'distance_km')) : null },
+  { name: 'busy_km', label: 'Busy-road km', format: 'km', better: 'lower', compute: routes => sum(metric(routes, 'busy_km')) },
+  { name: 'busy_share', label: 'Busy-road share', format: 'share', better: 'lower',
+    compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'busy_km')) / sum(metric(routes, 'distance_km')) : null },
+  { name: 'busy_lowdensity_share', label: 'Busy km at density < 5', format: 'share', better: 'lower',
+    compute: routes => sum(metric(routes, 'busy_km')) ? sum(metric(routes, 'busy_lowdensity_km')) / sum(metric(routes, 'busy_km')) : null },
+  // Avoid Busy routes against their Fastest twin (see fastestTwinMetrics); null for other modes.
+  { name: 'median_detour_vs_fastest', label: 'Median detour vs Fastest', format: 'ratio', better: 'lower', compute: routes => quantile(twin(routes, 'detour_vs_fastest'), 0.5) },
+  { name: 'p90_detour_vs_fastest', label: 'p90 detour vs Fastest', format: 'ratio', better: 'lower', compute: routes => quantile(twin(routes, 'detour_vs_fastest'), 0.9) },
+  { name: 'mean_residual_busy_share', label: 'Mean residual busy share', format: 'share', better: 'lower', compute: routes => mean(twin(routes, 'residual_busy_share')) },
+  { name: 'did_not_avoid_share', label: `Still > ${DID_NOT_AVOID * 100}% of Fastest busy km`, format: 'share', better: 'lower',
+    compute: routes => { const t = routes.filter(r => r.ok && r.vs_fastest && Number.isFinite(r.vs_fastest.residual_busy_share)); return t.length ? t.filter(r => r.vs_fastest.residual_busy_share > DID_NOT_AVOID).length / t.length : null; } },
+  { name: 'detour_bought_nothing_share', label: 'Detour > 1.3x, < 0.3 busy km avoided', format: 'share', better: 'lower',
+    compute: routes => twinShare(routes, v => v.busy_avoided_km < MIN_BUSY_KM && v.detour_vs_fastest > DETOUR_BOUGHT_NOTHING) },
+  { name: 'median_avoidance_efficiency', label: 'Median extra km per busy km avoided', format: 'ratio', better: 'lower', compute: routes => quantile(twin(routes, 'avoidance_efficiency'), 0.5) },
   { name: 'unpaved_share', label: 'Unpaved share', format: 'share', better: null,
     compute: routes => sum(metric(routes, 'distance_km')) ? sum(metric(routes, 'unpaved_km')) / sum(metric(routes, 'distance_km')) : null },
   { name: 'class_i_share', label: 'Class I share (mean)', format: 'share', better: 'higher',
