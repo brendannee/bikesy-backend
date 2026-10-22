@@ -79,12 +79,10 @@ function validateSurfaceOptions(id, options) {
 }
 
 // Busy-road preference (docs/REGIONS.md#busy-roads): busy_penalty adds to the edge factor of
-// fast trunk, primary and secondary roads, busy_town_penalty does so weighted by how built-up
-// the road's surroundings are, and busy_lane_relief is the share of the bike lane or shoulder
-// relief those roads keep. They need the engine patch; without them costs are stock.
-export const BUSY_ROAD_KEYS = ['busy_penalty', 'busy_town_penalty', 'busy_lane_relief'];
+// fast trunk, primary and secondary roads. It needs the engine patch; without it costs are stock.
+export const BUSY_ROAD_KEYS = ['busy_penalty'];
 function validateBusyRoadOptions(id, options) {
-  for (const [key, max] of [['busy_penalty', 10], ['busy_town_penalty', 10], ['busy_lane_relief', 1]]) {
+  for (const [key, max] of [['busy_penalty', 10]]) {
     if (Object.hasOwn(options, key) && (!Number.isFinite(options[key]) || options[key] < 0 || options[key] > max)) {
       throw new Error(`Invalid ${key} in scenario ${id}; use a number from 0 to ${max}`);
     }

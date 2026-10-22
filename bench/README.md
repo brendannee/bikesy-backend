@@ -152,8 +152,8 @@ npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/
   track share within 30 m of the route, so snapping noise stays at 0.98 or more (exact
   repeats score 1.0) while 0.9 fails once about a tenth of the route changes. Tracks were
   captured from the adapter's `/route` polyline5 path; the matching tuning is
-  `tunings/tahoe/candidate.json`. Check with
-  `npm run bench -- --region tahoe --sets curated --tags approved --tuning candidate --valhalla URL`.
+  `config` (the committed `config/tahoe.json`). Check with
+  `npm run bench -- --region tahoe --sets curated --tags approved --tuning config --valhalla URL`.
   Replace a track (new date in the name) only when the owner approves the new route.
 - `expect` entries select modes by **facets**, never by scenario number: `"*"` is every
   mode, `{"traffic": "quiet"}` every mode with that facet, `{"surface": ["dirt", "mixed"]}`
@@ -475,7 +475,7 @@ come from Valhalla 3.5.1 `trace_attributes` on the route's own shape, elevation 
 | `high_stress_km`, `high_stress_share` | Ridden on a motorway, or on a trunk/primary/secondary road (incl. its ramps and turn channels) with a tagged limit ≥ 45 mph (72 km/h) or with neither a bike lane (`cycle_lane` dedicated/separated) nor a shoulder. Sharrows are not a lane; untagged speed limits count as low. |
 | `arterial_km`, `arterial_share` | Ridden on a motorway, trunk, primary or secondary road (incl. ramps and turn channels), whatever its speed limit, bike lane or shoulder: the busy-road share that "Avoid Busy Roads" questions need when a bike lane keeps an arterial out of `high_stress_km`. |
 | `busy_km`, `busy_share` | Ridden on a motorway/trunk/primary/secondary road (incl. ramps and turn channels) with a tagged limit >= 35 mph (56 km/h), whatever the bike lane or shoulder: the engine's busy-weight definition. Untagged limits never count. |
-| `busy_town_km`, `busy_lowdensity_km` | `busy_km` split by Valhalla `edge.density`: >= 5 (the engine's town gate applies `busy_town_penalty`) and < 5. |
+| `busy_town_km`, `busy_lowdensity_km` | `busy_km` split by Valhalla `edge.density`: >= 5 (town) and < 5. Diagnostic only; the engine's `busy_penalty` applies everywhere. |
 | `class_i_share` | Paved, car-free path (cycleway, path, footway, pedestrian; not sidewalks) ridden on the bike. |
 | `wilderness_km` | Length inside the region's wilderness polygons (segment midpoints). |
 | `walk_km` | Walking sections (stairs, dismount). |
@@ -714,31 +714,37 @@ npm run bench -- --region sf --image bikesy-sf-data:latest --tuning config --nam
 ## Example: Tahoe busy roads, October 2026
 
 Riders found that Avoid Busy Roads still used US 50 and Pioneer Trail where quiet streets and
-paths ran alongside ([Busy roads](../docs/REGIONS.md#busy-roads)). `busy.sweep.json` sweeps the
-three busy-road keys in the quiet scenarios on an engine with the patch; `r1p0u0` reproduces the
-earlier configuration byte for byte, so one run holds the whole trade-off:
+paths ran alongside ([Busy roads](../docs/REGIONS.md#busy-roads)). The judge is the
+[vs-Fastest scorecard](#aggregates) on the `slt` and `realistic` sets: busy share, did-not-avoid
+and the detour against the Fastest Route twin. A sweep of the one engine key, on an engine with
+the patch (the Fastest modes are dropped because the key does not apply to them):
 
-```sh
-NODE_OPTIONS=--max-old-space-size=12288 npm run bench -- --region tahoe --image IMAGE \
-  --tuning config --tuning busy --sets curated,sampled,realistic,sampled-weighted --name busy
+```json
+{ "base": "config", "modes": { "2": null, "4": null, "6": null },
+  "grid": { "options.busy_penalty": [0, 1, 1.5, 2, 3, 5] } }
 ```
 
-The sweep has 31 tunings, so give Node a larger heap. Scenario 1, all four sets (633 trips):
+```sh
+npm run bench -- --region tahoe --image IMAGE --tuning config --tuning busy-global \
+  --sets slt,realistic,curated --name busy-global
+```
 
-| Tuning | Arterial share | Distance | Routes > 1.5x | Expectations |
-| --- | --- | --- | --- | --- |
-| before (`r1p0u0`) | 30.3% | 7,050 km | 6 | 29/32 |
-| `busy_lane_relief` 0.5 (`r0.5p0u0`) | 27.6% | +0.6% | 7 | 31/32 |
-| `busy_town_penalty` 2 (`r1p0u2`) | 26.9% | +0.8% | 11 | 32/32 |
-| **both (config, `r0.5p0u2`)** | **24.5%** | **+1.7%** | **12** | **32/32** |
-| relief 0.25, town 3 (`r0.25p0u3`) | 20.9% | +2.9% | 12 | 32/32 |
-| `busy_penalty` 0.5 (`r1p0.5u0`) | 26.6% | +0.5% | 8 | 32/32 |
-| `busy_penalty` 1 (`r1p1u0`) | 22.7% | +1.2% | 8 | 30/32 (Tahoe City to Truckee loop) |
-| `busy_penalty` 2 (`r1p2u0`) | 15.5% | +3.9% | 12 | 28/32 |
+Scenario 1 (Avoid Busy Roads, Paved and Dirt), 2026-10-22, `config/tahoe.json` otherwise:
 
-`busy_penalty` lowers the share most, but it also charges open-country highways, and from 1 (0.75 with relief 0.5) it
-brings back the loops that `use_roads` 0 caused. The arterial share counts every trunk, primary and
-secondary road, so a large part of what remains is open-country highway with no alternative.
+| `busy_penalty` | `slt` busy share | `realistic` busy share | Notes |
+| --- | --- | --- | --- |
+| 0 (stock) | 9.1% | 27.0% | Samurai Sushi to Tahoe Bagel on US 50; Meyers to LTCC on Pioneer Trail |
+| 1 | 2.6% | 24.1% | rider cases in town fixed; Tahoe City to Truckee leaves SR 89 for Martis Valley (22% dirt) |
+| 1.5 | 1.9% | 16.3% | |
+| **2 (config)** | **1.6%** | **14.1%** | Carson City to Tahoe Blue via Genoa Peak Rd (63% dirt, 1,513 m) from 0.5 up |
+| 3 | 1.2% | 9.7% | |
+| 5 | 0.8% | 5.8% | long tail of detours grows faster than the gain |
+
+Prefer Paved (3, 4) ride `bicycle_type` Road with `avoid_bad_surfaces` 1, which keeps them off dirt
+at every penalty (0 trips over 2% dirt on `slt` and `curated`); `unpaved_penalty` alone cannot,
+because the engine caps it at 10 and 10 routes like 8. The curated expectations at 2 pass except
+the two the owner accepted and rescoped: the Carson City default route over Genoa Peak, and
+0.14 km of US 50 on Samurai to Bagel in Prefer Dirt.
 
 ## Example: SF baseline, October 2026
 

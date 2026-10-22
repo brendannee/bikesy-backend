@@ -11,8 +11,7 @@
       "use_roads": 0.1,
       "maneuver_penalty": 2,
       "unpaved_penalty": 1,
-      "busy_lane_relief": 0.5,
-      "busy_town_penalty": 2
+      "busy_penalty": 2
     },
     "2": {
       "use_hills": 0.5,
@@ -24,14 +23,17 @@
       "use_hills": 0.5,
       "use_roads": 0.1,
       "maneuver_penalty": 2,
+      "bicycle_type": "Road",
+      "avoid_bad_surfaces": 1,
       "unpaved_penalty": 8,
-      "busy_lane_relief": 0.5,
-      "busy_town_penalty": 2
+      "busy_penalty": 2
     },
     "4": {
       "use_hills": 0.5,
       "use_roads": 0.8,
       "maneuver_penalty": 2,
+      "bicycle_type": "Road",
+      "avoid_bad_surfaces": 1,
       "unpaved_penalty": 8
     },
     "5": {
@@ -40,8 +42,7 @@
       "maneuver_penalty": 2,
       "bicycle_type": "Mountain",
       "paved_penalty": 2,
-      "busy_lane_relief": 0.5,
-      "busy_town_penalty": 2
+      "busy_penalty": 2
     },
     "6": {
       "use_hills": 0.5,

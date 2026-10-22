@@ -153,7 +153,7 @@ test('tunings: config facets, base merge, tuning-wide options and sweeps', () =>
     modes: { '2': null, dirt: { facets: { surface: 'dirt' }, options: { use_roads: 0, paved_penalty: 0.5 } } } };
   const t = resolveSpec('tahoe', tahoe, spec);
   assert.deepEqual(t.modes.map(m => m.name), ['1', '3', '4', '5', '6', 'dirt']);
-  assert.deepEqual(t.modes[0].options, { use_hills: 0.9, use_roads: 0.1, maneuver_penalty: 2, unpaved_penalty: 2, busy_lane_relief: 0.5, busy_town_penalty: 2 });
+  assert.deepEqual(t.modes[0].options, { use_hills: 0.9, use_roads: 0.1, maneuver_penalty: 2, unpaved_penalty: 2, busy_penalty: 2 });
   const dirt = t.modes.at(-1);
   assert.equal(dirt.facets.mode, 'dirt');
   assert.equal(dirt.options.paved_penalty, 0.5, 'unknown engine keys pass through');

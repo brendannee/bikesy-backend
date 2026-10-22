@@ -54,8 +54,8 @@ export function isArterial(edge) {
 // Busy riding, matching the engine's busy weight: a motorway/trunk/primary/secondary road
 // (incl. ramps and turn channels) ridden on the bike with a tagged limit of 35 mph (56 km/h)
 // or more, whatever its bike lane or shoulder. Untagged limits never count.
-// `density` (0-15, Valhalla edge.density) splits it into town (>= 5, where the engine's town
-// gate applies its busy_town_penalty) and low density (< 5).
+// `density` (0-15, Valhalla edge.density) splits it into town (>= 5) and low density (< 5),
+// a diagnostic only: the engine's busy_penalty applies everywhere.
 export const BUSY_SPEED_KPH = 56;
 export const TOWN_DENSITY = 5;
 export const isBusy = edge => isArterial(edge) && (edge.speed_limit ?? 0) >= BUSY_SPEED_KPH;
