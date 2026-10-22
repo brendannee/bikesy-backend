@@ -31,7 +31,7 @@ export function loadPairSet(region, set, path = pairSetPath(region, set)) {
 
 // Sets that run by default when their file exists: the curated pairs, the sampled
 // sets and the realistic set. `user` is the local catalog bench/add-trips.mjs writes.
-export const DEFAULT_SETS = ['curated', 'sampled', 'realistic', 'user'];
+export const DEFAULT_SETS = ['curated', 'slt', 'sampled', 'realistic', 'user'];
 
 // External pair files: "[NAME=]PATH". NAME defaults to the file name without .json. Used by
 // --pairs-file and $BIKESY_BENCH_PAIRS (a ':'-separated list of the same).

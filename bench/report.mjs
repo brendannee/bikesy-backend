@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { decode } from '../src/polyline.js';
-import { AGGREGATES, isPathological } from './aggregates.mjs';
+import { AGGREGATES, avoidBusyProblems, isPathological } from './aggregates.mjs';
 import { similarity } from './lib/geo.mjs';
 import { METRICS } from './metrics.mjs';
 
@@ -90,9 +90,17 @@ export function buildReport(runs, baselineName) {
   }
 
   // Problems: pathological routes and failed expectations, worst first.
-  const problems = Object.entries(routes).filter(([, r]) => isPathological(r) || r.expectations.some(e => e.pass === false))
+  // Avoid Busy (quiet) routes are not flagged for plain detour: they may detour for as long as
+  // it buys quiet roads, so they are judged by avoidBusyProblems against their Fastest twin.
+  const facetsOf = Object.fromEntries(tunings.flatMap(t => t.modes.map(m => [`${t.id}|${m.name}`, m.facets])));
+  const isQuiet = (key, r) => facetsOf[`${key.split('|')[0]}|${r.mode}`]?.traffic === 'quiet';
+  const flagsOf = (key, r) => !isQuiet(key, r) ? [] : avoidBusyProblems(r.vs_fastest, r.vs_fastest?.fastest_busy_km
+    ?? routes[`${key.split('|')[0]}|${r.vs_fastest?.twin}|${r.trip}`]?.metrics.busy_km);
+  const flagged = new Map(Object.entries(routes).map(([key, r]) => [key, flagsOf(key, r)]));
+  const pathologicalProblem = (key, r) => isPathological(r) && (!r.ok || !isQuiet(key, r));
+  const problems = Object.entries(routes).filter(([key, r]) => pathologicalProblem(key, r) || flagged.get(key).length || r.expectations.some(e => e.pass === false))
     .map(([key, r]) => ({ key, tuning: key.split('|')[0], mode: r.mode, trip: r.trip, error: r.error, detour: r.metrics.detour ?? null, firm: r.metrics.firm_detour ?? null,
-      failed: r.expectations.filter(e => e.pass === false).map(e => `${e.key} ${e.limit} (got ${e.value ?? 'no route'})`) }))
+      failed: [...flagged.get(key), ...r.expectations.filter(e => e.pass === false).map(e => `${e.key} ${e.limit} (got ${e.value ?? 'no route'})`)] }))
     // Worst first: no route, then by the smaller of the two detours (see aggregates.mjs).
     .sort((a, b) => severity(b) - severity(a));
 
@@ -133,7 +141,7 @@ export function renderHtml(data) {
 <section><h2>Scorecard</h2><p class="muted">Per pair set, tuning and mode. Deltas compare each mode with its matching baseline mode; ▲/▼ coloured by whether the change is better or worse.</p><div id="scorecard"></div></section>
 <section><h2>Detour vs stress</h2><div class="controls" id="scatter-controls"></div><div id="scatter"></div></section>
 <section><h2>Changed routes</h2><p class="muted">Routes that differ from the baseline by more than ${Math.round(CHANGED_THRESHOLD * 100)}% (divergence = 1 − length-weighted overlap within 20 m). Click a row to view it.</p><div class="controls" id="changed-controls"></div><div id="changed" class="scroll"></div></section>
-<section><h2>Problems</h2><p class="muted">No route, detour above 1.5× the shortest rideable route, or a failed expectation. “vs firm” compares with the shortest route on compacted-or-better surfaces; when it is small, the shortest rideable route was only short because it used tracks or trails.</p><div class="controls" id="problem-controls"></div><div id="problems" class="scroll"></div></section>
+<section><h2>Problems</h2><p class="muted">No route, detour above 1.5× the shortest rideable route (not for Avoid Busy modes, where the 1.5× count in the tables is informational), a failed expectation, or an Avoid Busy route that did not avoid (still over half of Fastest’s busy km, Fastest having at least 1 km) or whose detour bought nothing (over 1.3× the Fastest distance for under 0.3 busy km avoided). “vs firm” compares with the shortest route on compacted-or-better surfaces; when it is small, the shortest rideable route was only short because it used tracks or trails.</p><div class="controls" id="problem-controls"></div><div id="problems" class="scroll"></div></section>
 <section id="pair-section"><h2>Pair</h2><div class="controls" id="pair-controls"></div>
 <div class="pair-grid"><div><div id="map"></div><div id="legend" class="legend"></div></div><div><div id="route-list"></div><div id="profile"></div></div></div>
 <div id="pair-metrics" class="scroll"></div></section>

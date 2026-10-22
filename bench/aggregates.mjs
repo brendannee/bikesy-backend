@@ -37,16 +37,30 @@ export const isPathologicalFirm = r => isPathological(r) && !(r.metrics.firm_det
 // Cross-scenario metrics: each Avoid Busy (traffic 'quiet') route is compared with its Fastest
 // ('busy') twin: the route of the same tuning and trip in the mode with the same hills and
 // surface facets. Stored on the quiet route result as `vs_fastest` (null without a twin).
-export const MIN_BUSY_KM = 0.3, DETOUR_BOUGHT_NOTHING = 1.3, DID_NOT_AVOID = 0.5;
+export const MIN_BUSY_KM = 0.3, DETOUR_BOUGHT_NOTHING = 1.3, DID_NOT_AVOID = 0.5, DID_NOT_AVOID_MIN_FASTEST_KM = 1;
 export function fastestTwinMetrics(quiet, fastest) {
   if (!quiet.ok || !fastest?.ok) return null;
   const q = quiet.metrics, f = fastest.metrics;
   if (!Number.isFinite(q.distance_km) || !f.distance_km || !Number.isFinite(q.busy_km) || !Number.isFinite(f.busy_km)) return null;
   const avoided = f.busy_km - q.busy_km;
-  return { twin: fastest.mode, detour_vs_fastest: q.distance_km / f.distance_km,
+  return { twin: fastest.mode, fastest_busy_km: f.busy_km, detour_vs_fastest: q.distance_km / f.distance_km,
     busy_avoided_km: avoided,
     residual_busy_share: f.busy_km >= MIN_BUSY_KM ? q.busy_km / f.busy_km : null,
     avoidance_efficiency: avoided >= MIN_BUSY_KM ? (q.distance_km - f.distance_km) / avoided : null };
+}
+
+// Problems of an Avoid Busy route judged against its Fastest twin (`vs` = its vs_fastest;
+// `fastestBusyKm` falls back to the twin's busy km for results saved before it was stored):
+// "did not avoid" = still over half of Fastest's busy km, where Fastest has at least 1 km;
+// "detour bought nothing" = over 1.3x Fastest's distance for under 0.3 busy km avoided.
+export function avoidBusyProblems(vs, fastestBusyKm = vs?.fastest_busy_km) {
+  if (!vs) return [];
+  const flags = [];
+  if (vs.residual_busy_share > DID_NOT_AVOID && fastestBusyKm >= DID_NOT_AVOID_MIN_FASTEST_KM)
+    flags.push(`did not avoid: ${(vs.residual_busy_share * 100).toFixed(0)}% of Fastest's ${fastestBusyKm.toFixed(1)} busy km left`);
+  if (vs.busy_avoided_km < MIN_BUSY_KM && vs.detour_vs_fastest > DETOUR_BOUGHT_NOTHING)
+    flags.push(`detour bought nothing: ${vs.detour_vs_fastest.toFixed(2)}x Fastest, ${vs.busy_avoided_km.toFixed(2)} busy km avoided`);
+  return flags;
 }
 
 export function attachFastestTwins(results, tunings) {
@@ -69,7 +83,7 @@ export const AGGREGATES = [
   { name: 'no_route', label: 'No route', format: 'count', better: 'lower', compute: routes => routes.filter(r => !r.ok).length },
   { name: 'median_detour', label: 'Median detour', format: 'ratio', better: 'lower', compute: routes => quantile(metric(routes, 'detour'), 0.5) },
   { name: 'p90_detour', label: 'p90 detour', format: 'ratio', better: 'lower', compute: routes => quantile(metric(routes, 'detour'), 0.9) },
-  { name: 'pathological', label: `No route or detour > ${PATHOLOGICAL_DETOUR}×`, format: 'count', better: 'lower', compute: routes => routes.filter(isPathological).length },
+  { name: 'pathological', label: `No route or detour > ${PATHOLOGICAL_DETOUR}× (informational for Avoid Busy)`, format: 'count', better: 'lower', compute: routes => routes.filter(isPathological).length },
   { name: 'pathological_firm', label: 'Of those, also > 1.5× shortest firm', format: 'count', better: 'lower', compute: routes => routes.filter(isPathologicalFirm).length },
   { name: 'weighted_median_detour', label: 'Median detour (pair-weighted)', format: 'ratio', better: 'lower',
     compute: routes => weightedQuantile(ok(weighted(routes)).map(r => ({ value: r.metrics.detour, weight: r.weight })), 0.5) },

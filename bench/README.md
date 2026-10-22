@@ -66,10 +66,40 @@ npm run bench -- --region tahoe --tuning config --tuning deployed --sets curated
 node bench/crosscheck.mjs "$BIKESY_BENCH_DIR"/runs/2026-10-18-crosscheck
 ```
 
+## What a good route means per mode
+
+Expectations and flags encode the product owner's goals, not a generic shortest-path ideal.
+
+**Avoid Busy Roads** (facet `traffic: quiet`) means staying off high-speed arterials whenever any
+alternative exists, even at the cost of a large detour or climb. Riders who accept busy roads pick
+Fastest Route. So detour and climb caps (`max_detour`, `max_climb_m`, `max_via_ratio`) belong on
+Fastest modes (`traffic: busy`) only, unless a pair's note documents a specific rider desire. Quiet
+modes are limited by busy-road caps (`max_busy_km`, `max_arterial_share`), Class I floors and
+high-stress caps instead.
+
+**Prefer Paved** (`surface: paved`) is for a rider who may be on a road bike and cannot ride dirt: an
+unpaved share above about 2% is a failure (`max_unpaved_share`), and a long paved detour, even on a
+busier road, is an acceptable way to get there.
+
+**Prefer Dirt** (`surface: dirt`) accepts a large detour and climb to ride dirt; its floors are
+`min_unpaved_share` and it has no detour cap.
+
+**Paved and Dirt** (`surface: mixed`) is lowest cost regardless of surface.
+
+**Avoid Busy detours are judged against Fastest, not against the shortest route.** Each quiet route
+is compared with the Fastest route of the same hills and surface (`vs_fastest`: `busy_avoided_km`,
+`detour_vs_fastest`, `residual_busy_share`). A detour is a problem only when it buys nothing. The
+report's Problems section lists two flags for quiet modes: "did not avoid" (the route still rides
+over half of Fastest's busy km, Fastest having at least 1 km) and "detour bought nothing" (over
+1.3x Fastest's distance for under 0.3 km of busy road avoided). The plain "detour over 1.5x"
+count stays in the tables for quiet modes as information and is a Problem only for other modes.
+`node bench/reeval.mjs RUN_DIR` re-evaluates a saved run against the current pair expectations
+and flags without rerouting.
+
 ## Pair catalogs
 
 `bench/pairs/REGION.json` is the curated set; `REGION-NAME.json` is another set. The
-runner uses `curated`, `sampled`, `realistic` and `user` by default, those that exist;
+runner uses `curated`, `slt`, `sampled`, `realistic` and `user` by default, those that exist (`slt` is Tahoe only);
 `--sets` picks. Sets stay separate in all output so curated pairs cannot hide behaviour
 on the sampled ones.
 
@@ -79,7 +109,7 @@ on the sampled ones.
 | `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 199 one-way pairs (200 drawn from building and address density, seed 1, minus `s007`, which crosses the mountains and is not a realistic trip; see `removed_pairs` in the file). The baseline for comparisons; do not regenerate it. |
 | `realistic` | `tahoe-realistic.json` (71) | `sf-realistic.json` (70) | Pairs with a `purpose`, a `share` and a relative `weight`. Tahoe: public places weighted by where people searched for routes on the Tahoe Bike Map (2019–2026). SF: commute flows from LODES and ACS. See [Realistic pairs](#realistic-pairs). |
 | `sampled-weighted` | `tahoe-sampled-weighted.json` | `sf-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
-| `slt` | `tahoe-slt.json` (120) | none | 120 one-way pairs with both ends in South Lake Tahoe, Stateline and Meyers (bbox -120.03,38.85,-119.92,38.965), 1-10 km straight line, drawn from building and address density with `--alpha 1.0` (seed 2). For judging Avoid Busy Roads. Opt in with `--sets slt`; the six `rider` pairs of the curated set run alone with `--sets curated --tags rider`. |
+| `slt` | `tahoe-slt.json` (120) | none | 120 one-way pairs with both ends in South Lake Tahoe, Stateline and Meyers (bbox -120.03,38.85,-119.92,38.965), 1-10 km straight line, drawn from building and address density with `--alpha 1.0` (seed 2). For judging Avoid Busy Roads. Runs by default for Tahoe; the six `rider` pairs of the curated set run alone with `--sets curated --tags rider`. |
 | `user` | `tahoe-user.json` | `sf-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
 
 Pairs from outside the repository join a run with `--pairs-file [NAME=]FILE` (repeatable,

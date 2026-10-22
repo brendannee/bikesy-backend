@@ -41,7 +41,7 @@ export function render(results, combines = {}) {
   const sets = [...new Set(results.routes.map(r => r.set))];
   const groups = [...sets.map(s => [s, [s]]), ...Object.entries(combines)];
   const lines = [`# ${results.meta.name}: pair sets compared`, '',
-    `Run ${results.meta.created.slice(0, 16).replace('T', ' ')} UTC at ${results.meta.commit}. Pathological = no route or detour over 1.5x the shortest rideable route; "and > 1.5x firm" also exceeds 1.5x the shortest firm-surface route. Trips are pair x direction. Shares of km are by route length.`, ''];
+    `Run ${results.meta.created.slice(0, 16).replace('T', ' ')} UTC at ${results.meta.commit}. Pathological = no route or detour over 1.5x the shortest rideable route (informational for Avoid Busy modes, which are judged against Fastest below); "and > 1.5x firm" also exceeds 1.5x the shortest firm-surface route. Trips are pair x direction. Shares of km are by route length.`, ''];
   for (const tuning of results.tunings) {
     for (const mode of tuning.modes) {
       lines.push(`## ${tuning.name}, mode ${mode.name} (${Object.entries(mode.facets).filter(([k]) => k !== 'mode').map(([k, v]) => `${k}: ${v}`).join(', ')})`, '',
