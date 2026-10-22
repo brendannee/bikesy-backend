@@ -76,7 +76,7 @@ on the sampled ones.
 | Set | Tahoe | SF | What it is |
 | --- | --- | --- | --- |
 | `curated` | `tahoe.json` (40) | `sf.json` (45) | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
-| `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
+| `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 199 one-way pairs (200 drawn from building and address density, seed 1, minus `s007`, which crosses the mountains and is not a realistic trip; see `removed_pairs` in the file). The baseline for comparisons; do not regenerate it. |
 | `realistic` | `tahoe-realistic.json` (71) | `sf-realistic.json` (70) | Pairs with a `purpose`, a `share` and a relative `weight`. Tahoe: public places weighted by where people searched for routes on the Tahoe Bike Map (2019–2026). SF: commute flows from LODES and ACS. See [Realistic pairs](#realistic-pairs). |
 | `sampled-weighted` | `tahoe-sampled-weighted.json` | `sf-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
 | `user` | `tahoe-user.json` | `sf-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
