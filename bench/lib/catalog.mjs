@@ -3,6 +3,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decode } from '../../src/polyline.js';
+import { parseGpx } from './geo.mjs';
 
 export const BENCH_DIR = fileURLToPath(new URL('../', import.meta.url));
 
@@ -23,8 +25,15 @@ export function loadPairSet(region, set, path = pairSetPath(region, set)) {
       const p = pair[key];
       if (!Number.isFinite(p?.lat) || !Number.isFinite(p?.lon)) throw new Error(`${path}: pair ${pair.id} needs numeric ${key}.lat/lon`);
     }
-    // Reference GPX paths are relative to the catalog file.
-    for (const ref of pair.references ?? []) ref.path = resolve(dirname(path), ref.gpx);
+    // Reference files are relative to the catalog file. `path` identifies a reference for caching:
+    // the GPX file, or "<file>#<key>" for an entry of a polyline file.
+    for (const ref of pair.references ?? []) {
+      if (ref.polyline) {
+        if (!ref.polyline.file || !ref.polyline.key) throw new Error(`${path}: pair ${pair.id} reference polyline needs file and key`);
+        ref.path = `${resolve(dirname(path), ref.polyline.file)}#${ref.polyline.key}`;
+      } else if (ref.gpx) ref.path = resolve(dirname(path), ref.gpx);
+      else throw new Error(`${path}: pair ${pair.id} reference needs gpx or polyline`);
+    }
   }
   return { set, path, ...catalog, pairs: catalog.pairs ?? [] };
 }
@@ -89,4 +98,17 @@ export function stringifyCatalog(catalog) {
   const { pairs = [], ...rest } = catalog;
   const head = JSON.stringify(rest, null, 2).replace(/\n}$/, '');
   return `${head}${Object.keys(rest).length ? ',' : ''}\n  "pairs": [\n${pairs.map(p => '    ' + JSON.stringify(p)).join(',\n')}\n  ]\n}\n`;
+}
+
+// Points ([lat, lon]) of a catalog reference: a GPX file (`"gpx": "refs/x.gpx"`) or an entry of a
+// polyline6 JSON file (`"polyline": {"file": "approved-refs.json", "key": "<entry key>"}`, see
+// bench/README.md). Run loadPairSet first, which sets ref.path.
+const polylineFiles = new Map();
+export function loadReferencePoints(ref) {
+  if (!ref.polyline) return parseGpx(readFileSync(ref.path, 'utf8'));
+  const [file] = ref.path.split('#');
+  if (!polylineFiles.has(file)) polylineFiles.set(file, JSON.parse(readFileSync(file, 'utf8')));
+  const entry = polylineFiles.get(file).routes?.[ref.polyline.key];
+  if (!entry?.polyline) throw new Error(`${file}: no reference "${ref.polyline.key}"`);
+  return decode(entry.polyline, 6);
 }

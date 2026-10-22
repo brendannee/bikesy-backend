@@ -14,10 +14,10 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../src/config.js';
 import { decode, encode } from '../src/polyline.js';
-import { BENCH_DIR, DEFAULT_SETS, expandTrips, loadCatalogs, matchesModes, pairsFileSpecs } from './lib/catalog.mjs';
+import { BENCH_DIR, DEFAULT_SETS, expandTrips, loadCatalogs, loadReferencePoints, matchesModes, pairsFileSpecs } from './lib/catalog.mjs';
 import { createCache, hashKey } from './lib/cache.mjs';
 import { engineIdentity, imagePolicy, startEngine, stopEngine, waitForEngine } from './lib/engine.mjs';
-import { lineLength, parseGpx, preparePolygons, similarity, simplify } from './lib/geo.mjs';
+import { lineLength, preparePolygons, similarity, simplify } from './lib/geo.mjs';
 import { createApiSource, createValhallaSource, fetchAttributes, valhallaRequest } from './lib/sources.mjs';
 import { loadTunings } from './lib/tunings.mjs';
 import { computeMetrics, stressClass, surfaceClass } from './metrics.mjs';
@@ -119,7 +119,7 @@ async function main() {
   const areas = existsSync(areasPath) ? { wilderness: preparePolygons(JSON.parse(readFileSync(areasPath, 'utf8')).features) } : {};
   const references = new Map();
   for (const trip of trips) for (const ref of trip.pair.references ?? []) {
-    if (!references.has(ref.path)) references.set(ref.path, { points: parseGpx(readFileSync(ref.path, 'utf8')) });
+    if (!references.has(ref.path)) references.set(ref.path, { points: loadReferencePoints(ref) });
   }
 
   // Group tunings by the engine they need. API tunings map-match on the default engine.

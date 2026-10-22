@@ -139,22 +139,32 @@ npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/
 - `via` (optional) also routes from→via and via→to for each mode, for the `via_ratio`
   metric (route additivity: a direct route much longer than one forced through a known
   good point means some edge cost is wrong).
-- `references` (optional) are GPX tracks, relative to the catalog file, for the
-  `reference_overlap` metric. `modes` selects which modes they apply to.
-- **Approved routes** (owner-reviewed, kept to flag later changes): one GPX per pair,
-  direction, scenario and approval date in `bench/pairs/approved-refs/`, named
-  `<pair>.forward.s<scenario>.<date>.gpx` (committed; `refs/` is git-ignored). Each is a
-  `references` entry keyed to its scenario with `"modes": {"mode": "3"}` (a reference only
-  applies to modes it matches, so a pair can hold one track per scenario), plus the tag
-  `approved`, and one expectation for the approved scenarios and direction:
+- `references` (optional) are tracks for the `reference_overlap` metric, either
+  `{"gpx": "refs/x.gpx"}` (a GPX file relative to the catalog, for hand-made tracks) or
+  `{"polyline": {"file": "approved-refs/tahoe.json", "key": "<entry>"}}` (an entry of a polyline file
+  relative to the catalog, see Approved routes). `modes` selects which modes they apply to.
+- **Approved routes** (owner-reviewed, kept to flag later changes): one entry per pair,
+  direction, scenario and approval date in `bench/pairs/approved-refs/<region>.json` (tahoe.json), keyed
+  `<pair>.forward.s<scenario>`: `{"routes": {key: {"pair", "direction", "mode", "approved",
+  "note"?, "polyline"}}}`, where `polyline` is the route's exact vertices as a precision-6
+  encoded polyline (the encoding Valhalla and the adapter use; `src/polyline.js` `decode(text, 6)`).
+  Each is a catalog `references` entry keyed to its scenario with `"modes": {"mode": "3"}` (a
+  reference only applies to modes it matches, so a pair can hold one track per scenario),
+  e.g. `{"modes": {"mode": "3"}, "polyline": {"file": "approved-refs/tahoe.json", "key": "<pair>.forward.s3"}, "approved": "2026-10-22"}`,
+  plus the tag `approved`, and one expectation for the approved scenarios and direction:
   `{"modes": {"mode": ["1","2","3","5"]}, "direction": "forward", "min_reference_overlap": 0.9, "note": "Owner-approved route 2026-10-22 ..."}`.
+  To add one from a `/route` response (polyline5, 5-decimal vertices), re-encode the vertices
+  unchanged at precision 6: `node -e` with `decode(shape, 5)` from `src/polyline.js`, then each
+  coordinate times 1e6 rounded to an integer, delta-encoded as in `encode(points, 6)` (round
+  first: `encode` truncates). Paste the string as a new `routes` entry and add the matching
+  `references` entry. Do not simplify: the metric measures against every vertex.
   `reference_overlap` is the smaller of the route share within 30 m of the track and the
   track share within 30 m of the route, so snapping noise stays at 0.98 or more (exact
   repeats score 1.0) while 0.9 fails once about a tenth of the route changes. Tracks were
-  captured from the adapter's `/route` polyline5 path; the matching tuning is
+  captured from the adapter's `/route` polyline5 path (5-decimal vertices); the matching tuning is
   `config` (the committed `config/tahoe.json`). Check with
   `npm run bench -- --region tahoe --sets curated --tags approved --tuning config --valhalla URL`.
-  Replace a track (new date in the name) only when the owner approves the new route.
+  Replace a track (new key and date) only when the owner approves the new route.
 - `expect` entries select modes by **facets**, never by scenario number: `"*"` is every
   mode, `{"traffic": "quiet"}` every mode with that facet, `{"surface": ["dirt", "mixed"]}`
   any of, and `{"mode": "1"}` one mode by name. `direction` limits an entry to
