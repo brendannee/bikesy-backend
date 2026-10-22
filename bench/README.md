@@ -141,6 +141,20 @@ npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/
   good point means some edge cost is wrong).
 - `references` (optional) are GPX tracks, relative to the catalog file, for the
   `reference_overlap` metric. `modes` selects which modes they apply to.
+- **Approved routes** (owner-reviewed, kept to flag later changes): one GPX per pair,
+  direction, scenario and approval date in `bench/pairs/approved-refs/`, named
+  `<pair>.forward.s<scenario>.<date>.gpx` (committed; `refs/` is git-ignored). Each is a
+  `references` entry keyed to its scenario with `"modes": {"mode": "3"}` (a reference only
+  applies to modes it matches, so a pair can hold one track per scenario), plus the tag
+  `approved`, and one expectation for the approved scenarios and direction:
+  `{"modes": {"mode": ["1","2","3","5"]}, "direction": "forward", "min_reference_overlap": 0.9, "note": "Owner-approved route 2026-10-22 ..."}`.
+  `reference_overlap` is the smaller of the route share within 30 m of the track and the
+  track share within 30 m of the route, so snapping noise stays at 0.98 or more (exact
+  repeats score 1.0) while 0.9 fails once about a tenth of the route changes. Tracks were
+  captured from the adapter's `/route` polyline5 path; the matching tuning is
+  `tunings/tahoe/candidate.json`. Check with
+  `npm run bench -- --region tahoe --sets curated --tags approved --tuning candidate --valhalla URL`.
+  Replace a track (new date in the name) only when the owner approves the new route.
 - `expect` entries select modes by **facets**, never by scenario number: `"*"` is every
   mode, `{"traffic": "quiet"}` every mode with that facet, `{"surface": ["dirt", "mixed"]}`
   any of, and `{"mode": "1"}` one mode by name. `direction` limits an entry to
