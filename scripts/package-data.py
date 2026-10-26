@@ -12,7 +12,8 @@ a=p.parse_args();root=pathlib.Path(__file__).resolve().parents[1]
 e=(a.build or root/'build'/a.region)/'evidence';source=a.data.resolve();dest=a.destination.resolve()
 assert not dest.exists(),'Destination must be new'
 gate=json.loads((e/'graph-quality-gate.json').read_text());assert gate['passed']
-assert json.loads((e/'engine-cost-tests.json').read_text()).get('passed') is True and (e/'access-invariants.jsonl').stat().st_size
+# Valhalla logs to stdout ahead of engine_cost_test's one-line JSON summary.
+assert json.loads((e/'engine-cost-tests.json').read_text().splitlines()[-1]).get('passed') is True and (e/'access-invariants.jsonl').stat().st_size
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 receipt=json.loads((e/'gated-build.json').read_text());assert receipt['passed']
 assert receipt['region']==a.region and gate['region']==a.region
