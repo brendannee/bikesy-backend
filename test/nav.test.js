@@ -8,7 +8,10 @@ import { decode, encode } from '../src/polyline.js';
 
 // Real Tahoe capture: South Lake Tahoe via the El Dorado/Harrison bike path, scenario 1.
 const capture = JSON.parse(readFileSync(new URL('./fixtures/valhalla-tahoe-slt-nav.json', import.meta.url)));
-const config = loadConfig({ BIKESY_CONFIG: 'config/tahoe.json' });
+// Pin scenario 1 to the captured costing so retuning config/tahoe.json doesn't change the expected requests.
+const { bicycle_type, use_ferry, ...capturedScenario } = capture.request.costing_options.bicycle;
+const tahoe = loadConfig({ BIKESY_CONFIG: 'config/tahoe.json' });
+const config = { ...tahoe, scenarios: { ...tahoe.scenarios, 1: capturedScenario } };
 const query = (extra = '') => new URLSearchParams(capture.query + extra);
 const legacyKeys = ['directions', 'path', 'total_distance', 'elevation_profile', 'stats'];
 const withoutStats = ({ stats, ...rest }) => rest;
