@@ -1,0 +1,5 @@
+{
+  "description": "The tuned Tahoe scenarios on a policy rebuilt with hill_cost.exponent 2, for an image whose policy still has the cubic cost. Not needed with a data image built from config/tahoe.json. Policy file outside Git: set BIKESY_POLICY_VARIANTS.",
+  "base": "config",
+  "engine": { "policy": "${BIKESY_POLICY_VARIANTS}/e2.bin" }
+}

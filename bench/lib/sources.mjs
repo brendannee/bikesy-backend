@@ -15,7 +15,7 @@ import { densify } from './geo.mjs';
 const ATTRIBUTES = ['edge.length', 'edge.surface', 'edge.road_class', 'edge.use', 'edge.cycle_lane',
   'edge.shoulder', 'edge.speed_limit', 'edge.travel_mode', 'edge.names', 'edge.way_id',
   'edge.begin_shape_index', 'edge.end_shape_index', 'edge.bicycle_network', 'edge.lane_count',
-  'edge.sac_scale', 'edge.max_upward_grade', 'edge.weighted_grade', 'shape'];
+  'edge.sac_scale', 'edge.max_upward_grade', 'edge.weighted_grade', 'edge.density', 'shape'];
 
 const query = (from, to, scenario) => new URLSearchParams({ lat1: from.lat, lng1: from.lon, lat2: to.lat, lng2: to.lon, scenario });
 

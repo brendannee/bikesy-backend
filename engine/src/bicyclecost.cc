@@ -10,6 +10,7 @@
 #include "proto_conversions.h"
 #include "sif/costconstants.h"
 #include <cassert>
+#include <cmath>
 
 #ifdef INLINE_TEST
 #include "test.h"
@@ -207,6 +208,25 @@ constexpr ranged_default_t<float> kAvoidBadSurfacesRange{0.0f, kDefaultAvoidBadS
 
 constexpr ranged_default_t<float> kBSSCostRange{0, kDefaultBssCost, kMaxPenalty};
 constexpr ranged_default_t<float> kBSSPenaltyRange{0, kDefaultBssPenalty, kMaxPenalty};
+// Bikesy two-class surface preference: additive edge factor, same units as kSurfaceFactors.
+constexpr ranged_default_t<float> kSurfaceClassPenaltyRange{0.0f, 0.0f, 10.0f};
+// Bikesy busy-road preference (opt-in): additive edge factor on busy roads, same units as
+// kSurfaceFactors. See BusyRoadWeight and ParseBicycleCostOptions.
+constexpr ranged_default_t<float> kBusyPenaltyRange{0.0f, 0.0f, 10.0f};
+
+// How much an edge counts as a busy road, 0 to 1: motorway, trunk, primary and secondary
+// road, ramp and turn-channel edges, ramped by the edge's speed from 0 at 40 km/h (25 mph)
+// to 1 at 56 km/h (35 mph) and above. Everything else, including service roads, is 0.
+inline float BusyRoadWeight(const DirectedEdge* edge) {
+  if (edge->classification() > baldr::RoadClass::kSecondary) {
+    return 0.0f;
+  }
+  const Use use = edge->use();
+  if (use != Use::kRoad && use != Use::kRamp && use != Use::kTurnChannel) {
+    return 0.0f;
+  }
+  return std::min(1.0f, std::max(0.0f, (static_cast<float>(edge->speed()) - 40.0f) / 16.0f));
+}
 
 BaseCostingOptionsConfig GetBaseCostOptsConfig() {
   BaseCostingOptionsConfig cfg{};
@@ -414,6 +434,13 @@ public:
   float grade_penalty[16];
   bool exclude_ferries_;
   float uphill_weight_;
+  // Bikesy two-class surface preference; see ParseBicycleCostOptions for the field reuse.
+  bool surface_classes_;
+  float unpaved_penalty_;
+  float paved_penalty_;
+  // Bikesy busy-road preference; off unless the request had busy_penalty.
+  bool busy_roads_;
+  float busy_penalty_;
 
 protected:
   /**
@@ -465,6 +492,14 @@ BicycleCost::BicycleCost(const Costing& costing)
   avoid_bad_surfaces_ = costing_options.avoid_bad_surfaces();
   minimal_surface_penalized_ = kWorstAllowedSurface[static_cast<uint32_t>(type_)];
   worst_allowed_surface_ = avoid_bad_surfaces_ == 1.0f ? minimal_surface_penalized_ : Surface::kPath;
+  // Present only when the request had unpaved_penalty or paved_penalty (oneof case = presence).
+  surface_classes_ = costing_options.has_low_class_penalty_case() ||
+                     costing_options.has_hgv_no_access_penalty_case();
+  unpaved_penalty_ = costing_options.low_class_penalty();
+  paved_penalty_ = costing_options.hgv_no_access_penalty();
+  // Present only when the request had busy_penalty (oneof case = presence).
+  busy_roads_ = costing_options.has_use_primary_case();
+  busy_penalty_ = busy_roads_ ? costing_options.use_primary() : 0.0f;
 
   // Set the surface speed factors for the bicycle type.
   if (type_ == BicycleType::kRoad) {
@@ -631,6 +666,9 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
   // Represents the amount of accommodation that is being made for bicycling
   float accommodation_factor = 1.0f;
 
+  // Bikesy busy-road weight of this edge (0 unless the busy-road preference was requested)
+  float busy = 0.0f;
+
   // Special use cases: cycleway, footway, path, living street, track
   if (edge->use() == Use::kCycleway || edge->use() == Use::kFootway || edge->use() == Use::kPath) {
     // Differentiate how segregated the cycleway/path is from pedestrians
@@ -647,6 +685,11 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
     // Favor roads where a cycle lane and/or shoulder exists
     accommodation_factor =
         cyclelane_factor_[edge->shoulder() * 4 + static_cast<uint32_t>(edge->cyclelane())];
+
+    // Bikesy busy-road weight, for the penalty below. The cycle lane/shoulder relief is stock.
+    if (busy_roads_) {
+      busy = BusyRoadWeight(edge);
+    }
 
     // Penalize roads that have more than one lane (in the direction of travel)
     if (edge->lanecount() > 1) {
@@ -683,11 +726,23 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
   float factor =
       1.0f + avoid_roads_ * (accommodation_factor * roadway_stress);
 
-  // If surface is worse than the minimum we add a surface factor
-  if (edge->surface() >= minimal_surface_penalized_) {
+  // Bikesy two-class surface preference replaces the stock graded surface term when requested.
+  // Paved = kPavedSmooth/kPaved/kPavedRough; everything from kCompacted down is unpaved.
+  const float surface_class_penalty =
+      !surface_classes_ ? 0.0f
+                        : (edge->surface() <= Surface::kPavedRough ? paved_penalty_ : unpaved_penalty_);
+  if (surface_classes_) {
+    factor += surface_class_penalty;
+  } else if (edge->surface() >= minimal_surface_penalized_) {
+    // If surface is worse than the minimum we add a surface factor
     factor +=
         avoid_bad_surfaces_ * kSurfaceFactors[static_cast<uint32_t>(edge->surface()) -
                                               static_cast<uint32_t>(minimal_surface_penalized_)];
+  }
+
+  // Bikesy busy-road penalty: additive like the surface classes, so a lane still lowers the cost.
+  if (busy > 0.0f) {
+    factor += busy_penalty_ * busy;
   }
 
   // Compute bicycle speed. If you have to dismount on the edge then set speed to an average
@@ -703,7 +758,9 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
 
   // Compute elapsed time based on speed. Modulate cost with weighting factors.
   float sec = (edge->length() * speedfactor_[bike_speed]);
-  return {shortest_ ? edge->length() : edge->length() * factor + uphill_weight_ * bikesy::policy().uphill(edge, tile), sec};
+  // Shortest mode stays pure distance unless a surface preference was requested, which still applies.
+  return {shortest_ ? (surface_classes_ ? edge->length() * (1.0f + surface_class_penalty) : edge->length())
+                    : edge->length() * factor + uphill_weight_ * bikesy::policy().uphill(edge, tile), sec};
 }
 
 // Returns the time (in seconds) to make the transition from the predecessor
@@ -888,6 +945,35 @@ void ParseBicycleCostOptions(const rapidjson::Document& doc,
   JSON_PBF_RANGED_DEFAULT(co, kCycleSpeedRange, json, "/cycling_speed", cycling_speed);
   JSON_PBF_RANGED_DEFAULT(co, kBSSCostRange, json, "/bss_return_cost", bike_share_cost);
   JSON_PBF_RANGED_DEFAULT(co, kBSSPenaltyRange, json, "/bss_return_penalty", bike_share_penalty);
+
+  // Bikesy two-class surface preference: unpaved_penalty and paved_penalty (0-10, default 0).
+  // The engine links against the prebuilt libvalhalla.a, so no protobuf field can be added.
+  // The values live in two truck-only Costing.Options floats that bicycle costing and the
+  // shared DynamicCost base never read at Valhalla d377c8ace:
+  //   unpaved_penalty -> low_class_penalty (field 34)
+  //   paved_penalty   -> hgv_no_access_penalty (field 85)
+  // Both are set together, and only when the request names either key; their oneof case is
+  // the presence flag. Requests without the keys leave both unset and keep the stock
+  // avoid_bad_surfaces term exactly.
+  auto unpaved = rapidjson::get_optional<float>(json, "/unpaved_penalty");
+  auto paved = rapidjson::get_optional<float>(json, "/paved_penalty");
+  if (unpaved || paved) {
+    auto penalty = [](const boost::optional<float>& value) {
+      return value && std::isfinite(*value) ? kSurfaceClassPenaltyRange(*value) : 0.0f;
+    };
+    co->set_low_class_penalty(penalty(unpaved));
+    co->set_hgv_no_access_penalty(penalty(paved));
+  }
+
+  // Bikesy busy-road preference: busy_penalty (0-10, additive edge factor on busy roads,
+  // weighted by BusyRoadWeight). Stored, like the surface classes above, in a Costing.Options
+  // float that bicycle costing and DynamicCost never read: use_primary (field 32, motor
+  // scooter/motorcycle only). Set only when the request names the key; requests without it
+  // are unchanged.
+  auto busy_penalty = rapidjson::get_optional<float>(json, "/busy_penalty");
+  if (busy_penalty && std::isfinite(*busy_penalty)) {
+    co->set_use_primary(kBusyPenaltyRange(*busy_penalty));
+  }
 }
 
 cost_ptr_t CreateBicycleCost(const Costing& costing_options) {

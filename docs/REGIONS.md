@@ -39,7 +39,9 @@ settings. Startup rejects unknown keys and names the offending key and file.
 | `bounds` | yes | `left`, `bottom`, `right`, `top` in degrees: the OSM extraction, DEM coverage and policy-index rectangle. Tahoe uses `-120.5,38.65,-119.55,39.5`. | New data release |
 | `admin_states` | yes | Every US state the bounds touch, by postal code, each once. Complete state polygons are required for the build. | New data release |
 | `bounds_inset` | no | Inward margin in degrees for the public service area (`/bounds` and route validation). A number applies to all sides; an object sets `left`, `bottom`, `right`, `top`. Omit or use zero to serve the whole rectangle. The SF/Tahoe per-side values preserve their original service areas exactly. | App release |
-| `scenarios` | yes | Map of positive integer ids to bicycle costing options. `"1"` is required and is the default. `use_hills` and `use_roads` are 0 to 1; optional `maneuver_penalty` is nonnegative. Other keys pass through to Valhalla's bicycle costing. Ferries are always disabled. | App release |
+| `scenarios` | yes | Map of positive integer ids to bicycle costing options. `"1"` is required and is the default. `use_hills` and `use_roads` are 0 to 1; optional `maneuver_penalty` is nonnegative. Optional surface keys are validated too: `bicycle_type` (`Road`, `Cross`, `Hybrid` (the default) or `Mountain`), `avoid_bad_surfaces` (0 to 1), and `unpaved_penalty`/`paved_penalty` (0 to 10; see [Surface preference](#surface-preference)), and the busy-road key `busy_penalty` (0 to 10; see [Busy roads](#busy-roads)). Other keys pass through to Valhalla's bicycle costing unchecked. Ferries are always disabled. | App release |
+| `hill_cost` | no | `{"exponent": E}`, E from 1 to 3 (default 3, the cubic): the grade exponent of the hill cost in `bikesy-policy.bin`; see [Grade exponent](HILL-COST.md#grade-exponent-a-per-region-setting). Tahoe uses 2. Build time only: routing never reads it. | Data release (rebuild the policy) |
+| `paved_surface_defaults` | no | `true` appends `scripts/bicycle-surface-defaults.lua` to the import profile: untagged sidewalks and crossings, `surface=wood`/`boardwalk` and untagged boardwalk bridges become paved (see "Surface defaults" in [DATA.md](DATA.md)). Default false, which leaves the profile and its lock byte-identical. Tahoe sets it. | Data release |
 | `readiness` | yes | `locations` (two `{lat, lon}` inside the service area) and a configured `scenario`. Startup routes this trip and samples its elevation before listening. | App release |
 | `engine_policy` | yes | Must be `"bikesy-distance-v1"`. | Engine release |
 
@@ -48,6 +50,179 @@ packaged data. The Tahoe readiness coordinates are a Tahoe City route. They rout
 (999 m, both scenarios, with elevation) against a build of the 2026-10-12 Geofabrik
 snapshot; re-validate them against each new graph before publishing. The backend serves JSON
 APIs only; route responses include native elevation.
+
+## Surface preference
+
+The stock Valhalla surface term (`avoid_bad_surfaces`) grades surfaces in four steps
+(factors 1, 2.5, 4.5 and 7) starting at a surface that depends on `bicycle_type`. For
+the default Hybrid it starts at dirt, so compacted surfaces, which include every
+untagged footway and path, cost the same as asphalt. A scenario can instead use a
+two-class model:
+
+| Key | Range | Adds to the edge factor on |
+| --- | --- | --- |
+| `unpaved_penalty` | 0 to 10, default 0 | Unpaved edges: compacted, dirt, gravel and path surfaces (untagged paths, tracks, singletrack, `fine_gravel`, `unpaved`) |
+| `paved_penalty` | 0 to 10, default 0 | Paved edges: Valhalla's `paved_smooth`, `paved` and `paved_rough` |
+
+The edge cost is meters times a factor, `1 + (1 - use_roads) * stress`, plus the
+uphill term. When a scenario has either key, the engine adds
+`paved_penalty` or `unpaved_penalty` to that factor, in the same units as the stock
+term, and drops the stock `avoid_bad_surfaces` cost term. A penalty of 1 makes a meter
+of that class cost like two meters of the other at zero stress. Use
+`unpaved_penalty` to prefer pavement and `paved_penalty` to prefer dirt.
+
+- **Without either key, costs are bit-identical** to the engine before this option:
+  the stock surface term is unchanged, so scenarios without the keys (all of SF)
+  route exactly as before.
+- **`avoid_bad_surfaces`** has no cost effect alongside these keys, so config
+  validation accepts only 0 or 1 there. Its value 1 still forbids surfaces worse than
+  `bicycle_type` allows (compacted for Road, gravel for Cross, dirt for Hybrid).
+- **Direct, ignore hills** (`use_roads` 1 and `use_hills` 1) normally costs pure
+  meters. With a surface key, the penalty still applies (`meters * (1 + penalty)`),
+  like the stair carrying penalty, so "shortest" means shortest on the preferred
+  surface. Valhalla's explicit `shortest: true` means distance only, so validation
+  rejects it alongside these keys.
+- **Speed and time estimates** do not change; the surface still sets travel speed
+  as before.
+- **Classes come from the graph.** Valhalla takes `surface`, then `tracktype`;
+  `mtb:scale` overrides both; an untagged footway, path, sidewalk or bridleway is
+  compacted, an untagged track dirt, an untagged cycleway paved and roads paved.
+  Tag `surface` in OSM rather than tuning around a missing tag.
+- **Engine requirement.** The keys need an engine built from this repository's
+  patch. An older engine silently ignores them, so pair a config that uses them only
+  with a data image whose engine has the patch. `engine_policy` stays
+  `"bikesy-distance-v1"` because requests without the keys are unchanged.
+
+The engine links against the prebuilt `libvalhalla.a`, so it cannot add protobuf
+fields. `ParseBicycleCostOptions` stores the two values in truck-only costing option
+fields that bicycle costing and the shared `DynamicCost` base never read
+(`low_class_penalty` and `hgv_no_access_penalty`), and sets them only when a key is
+present. See the comment in `engine/src/bicyclecost.cc`.
+
+## Busy roads
+
+Valhalla's bicycle cost gives a road with a bike lane most of the relief of a quiet street
+whatever its speed or width (at `use_roads` 0.1 a dedicated lane cuts the stress term by
+about 55%), so a 40 mph five-lane truck route with a painted lane costs about 2.7x its length
+against 1.8x for a residential street and 1.2 to 1.4x for a bike path. The extra turns and
+crossings of a quiet detour then often outweigh the difference. One optional scenario key
+changes that for fast arterials: motorway, trunk, primary and secondary road, ramp and turn
+channel edges, weighted by edge speed from 0 at 40 km/h (25 mph) to 1 at 56 km/h (35 mph)
+and above. The weight uses the edge speed Valhalla assigned (`edge->speed()`: the maxspeed
+when tagged, otherwise the road-class default), not the posted limit. Untagged arterials get
+the class default, which is usually 56 km/h or more, so they count as fully busy. Everything
+else, including service roads and every path, is untouched.
+
+| Key | Range | Effect on busy edges |
+| --- | --- | --- |
+| `busy_penalty` | 0 to 10, default 0 | Added to the edge factor (like `unpaved_penalty`), times the busy weight, everywhere: in town and in open country alike. |
+
+- **A lane still helps.** The penalty is additive and the stock bike lane and shoulder relief
+  is kept, so a busy road with a lane always costs less than the same road without one.
+- **Open-country highways are charged too.** Where SR 89, Kingsbury Grade or US 50 over Spooner
+  Summit has a quiet alternative, however long, hilly or unpaved, Avoid Busy Roads may take it
+  (the Tahoe evidence below has the cases). Fastest Route and Prefer Paved are the escape hatches:
+  Fastest Route sets no penalty, and Prefer Paved rides a road bike that refuses dirt.
+- **Without the key, costs are bit-identical**, so SF and Fastest Route are unchanged.
+  `ParseBicycleCostOptions` stores the value, like the surface keys, in a motor-vehicle costing
+  option field that bicycle costing never reads (`use_primary`), set only when the key is
+  present. Speed and time estimates do not change.
+- **Shortest modes ignore it.** Valhalla's `shortest` mode and Bikesy's implicit shortest mode
+  (`use_roads` 1 with `use_hills` 1) return pure distance, so `busy_penalty` would have no
+  effect there. Config validation rejects `busy_penalty` combined with `shortest` other than
+  false, or with `use_roads` 1 and `use_hills` 1.
+- **Engine requirement.** An engine without the patch silently ignores the key.
+- **Not kept.** Two variants tried in October 2026 were dropped: a town-only penalty weighted by
+  Valhalla's road density (the classification is opaque: the 45 to 50 mph part of Pioneer Trail
+  sits at density 2 to 4 and was never charged, while US 50 through town was), and a reduced bike
+  lane relief on busy roads (the stock discount is right).
+
+### Tahoe scenarios
+
+Tahoe pairs a "Traffic" select with a "Trail Surface" select, a 2 x 3 grid of scenarios.
+Scenarios 1 and 2 keep their original meaning (they are the default scenario and Fastest Route),
+but their costing changed in October 2026: they now carry a neutral `unpaved_penalty`, and the
+data behind them has the filtered, squared hill cost, so some of their routes differ from the
+v2-20261019 release (see below). Every scenario uses `use_hills` 0.5 and `maneuver_penalty` 2.
+
+| Scenario | Traffic | Trail Surface | `use_roads` | Surface keys |
+| --- | --- | --- | --- | --- |
+| 1 (default) | Avoid Busy Roads | Paved and Dirt | 0.1 | `unpaved_penalty` 1 |
+| 2 | Fastest Route | Paved and Dirt | 0.8 | `unpaved_penalty` 0.25 |
+| 3 | Avoid Busy Roads | Prefer Paved | 0.1 | `unpaved_penalty` 8, `bicycle_type` Road, `avoid_bad_surfaces` 1 |
+| 4 | Fastest Route | Prefer Paved | 0.8 | `unpaved_penalty` 8, `bicycle_type` Road, `avoid_bad_surfaces` 1 |
+| 5 | Avoid Busy Roads | Prefer Dirt | 0.1 | `paved_penalty` 2, `bicycle_type` Mountain |
+| 6 | Fastest Route | Prefer Dirt | 0.8 | `paved_penalty` 2, `bicycle_type` Mountain |
+
+The Avoid Busy Roads scenarios (1, 3, 5) also set the [busy-road key](#busy-roads)
+`busy_penalty` 2; Fastest Route does not set it. Scenarios 1 and 2 ride the default Hybrid
+bicycle type, 3 and 4 a Road bike with `avoid_bad_surfaces` 1 (stock Valhalla options), 5 and 6
+a Mountain bike.
+
+The Tahoe config also sets `hill_cost.exponent` 2 and `paved_surface_defaults` true, which are
+properties of the data build, so the scenarios need a data image built from this config (the
+engine patch, a policy with the squared hill cost and the paved import defaults). Without the
+engine patch, scenarios 3 to 6 route like 1 and 2 and the surface keys of 1 and 2 are ignored.
+
+The values were chosen with the route benchmark (`bench/`, curated, sampled and realistic sets,
+422 trips per scenario) one family at a time, then combined and verified on all six scenarios.
+Summary of the evidence, on the 2026-10-19 graph with the 35 m dead-band policy:
+
+- **Hill cost.** The exponent (3 to 2) is the lever that mattered; `use_hills`, band and minimum
+  run were flat or traded climb for fewer detours ([HILL-COST.md](HILL-COST.md#grade-exponent-a-per-region-setting)).
+- **Traffic (retuned 2026-10-21 from rider notes).** Avoid Busy Roads uses `use_roads` 0.1 and Fastest Route 0.8. At 0 the quiet modes took a 32 km, 448 m mountain-bike loop from Tahoe City to Truckee rather than 9 km of SR 89 (and similar loops on es-carsonjct-glenbrook, s030, s187); 0.1 routes them through the canyon for +2.3 points of high-stress share (20.7 to 23.0%) and fewer routes over 1.5x. At 1 Fastest Route gave no credit to a bike lane or parallel path; 0.8 keeps the busy facet, lowers high-stress share from 61.8 to 53.5%, raises Class I share from 3 to 8% and fixes s045, s113, s161 (shorter routes). Earlier note: `use_roads` 0 and 1 stay. With the hill artefacts gone, no scenario has an absurd
+  detour left that `use_roads` would fix. Raising quiet `use_roads` from 0 to 0.3 or lowering busy to
+  0.7 only moves high-stress share (19 to 27% and 60 to 44%), so the two stay clearly separated.
+- **Busy roads (2026-10-21/22, rider notes).** Avoid Busy Roads still rode US 50 from Samurai
+  Sushi to Tahoe Bagel Company (90% of 1.1 km, in all six scenarios) and Pioneer Trail from Meyers
+  to LTCC in Prefer Paved (80% of 11 km). The bike lane put them at 2.0 to 2.7x distance, and the
+  quiet routes, though cheaper per metre, paid more in turns (Meyers: the path route's edges cost
+  1,573 less, its transitions 2,374 more). The judge for Avoid Busy Roads is the share of route
+  length on busy roads (class secondary and up, limit 35 mph and up, lane ignored) against the
+  Fastest Route twin, on the 120-pair South Lake Tahoe set (`slt`) and the realistic set. Sweeping
+  `busy_penalty` 0 / 1 / 1.5 / 2 / 3 / 5 in scenario 1: busy share 9.1 / 2.6 / 1.9 / 1.6 / 1.2 /
+  0.8% in South Lake Tahoe and 27.0 / 24.1 / 16.3 / 14.1 / 9.7 / 5.8% on the realistic set. In town
+  1 already fixes the rider cases; most of the rural route changes happen between 1 and 2, and past
+  3 the long tail of detours grows faster than the gain, so Tahoe uses **2**. The price is in open
+  country: from 0.5 the default Carson City to Tahoe Blue route leaves Jacks Valley Rd and Kingsbury
+  for Genoa Peak Rd and the Clear Creek Trail (46.9 km, 1,513 m of climbing, 63% dirt), and from 1
+  Tahoe City to Truckee leaves SR 89 for Martis Valley and Sawmill Flat (30.6 km, 434 m, 22% dirt).
+  Those are accepted: they are what "avoid busy roads, paved and dirt" asks for, and Fastest Route
+  or Prefer Paved take the highway.
+- **Prefer Paved rides a Road bike (2026-10-22).** With a busy penalty, Prefer Paved needs a
+  surface term that beats it, and `unpaved_penalty` cannot: the engine caps it at 10, 10 routes
+  like 8, and above 10 Valhalla resets the value to 0 (no penalty at all). Stock
+  `bicycle_type` Road with `avoid_bad_surfaces` 1 does the job instead: no trip over 2% dirt on the
+  South Lake Tahoe and curated sets at any penalty, 2 of 142 on the realistic set (one a 25 m
+  connector), Golden Bear to the Hangar 0% dirt both ways, scenario 4 unchanged in distance
+  (median 1.031x the shortest route), no routing failures; on the sampled-weighted set the dirt
+  failures in Prefer Paved fall from 44 to 8. `unpaved_penalty` 8 stays for the compacted surfaces
+  the Road type tolerates. Caveat: Road also raises Valhalla's assumed speed, which only affects
+  Valhalla's own time estimate (the app shows its fixed-speed time).
+- **Alternatives dropped.** A town-only penalty (weighted by road density) matched the global
+  penalty inside South Lake Tahoe (busy share 0.8 to 1.8%) but left the realistic set at 15.9 to
+  22.2% against 14.1%, and could not see the fast part of Pioneer Trail (density 2 to 4); reducing
+  the bike lane relief on busy roads added little once a penalty was in place. Both were removed
+  from the engine.
+- **Neutral default (scenarios 1 and 2).** `unpaved_penalty` 1 makes all unpaved surfaces cost the
+  same, as decided. It keeps today's unpaved share (quiet 15% against 14% today), and takes the
+  paved Tallac Rd instead of a 0.65 km unpaved path at Kiva Beach (Class I share 0.50 against 0.43
+  at 0.5). Lower values (0 to 0.5) gave 19 to 26% unpaved and failed that pair.
+- **Prefer Paved (retuned 2026-10-21).** `unpaved_penalty` 8 in both traffic modes: riders on road bikes would rather ride around than take any dirt (1144 Golden Bear Trail to The Hangar needs 8 to leave the meadow paths, 5.5 km paved instead of 3.0 km with 1.4 km of dirt). Unpaved share 8.2 to 2.1% (quiet) and 3.0 to 1.3% (Fastest); routes over 1.5x rise from 5 to 13 and 10 to 16 because staying paved is a detour where the short way is a jeep trail (a trip over the mountains with a dirt shortcut can be more than twice as long paved). Earlier note: 2.5 is the smallest quiet value that takes US 50 on the Spooner grade (8% unpaved
+  over the 422 trips; 1.5 gives 12%, 4 gives 5% but 7 routes over 1.5x). Fastest Route already takes
+  US 50, so 1.5 there only trims the remaining unpaved shortcuts.
+- **Fastest Route + Paved and Dirt (retuned 2026-10-21).** `unpaved_penalty` 0.25, about the Hybrid speed loss on dirt, so Fastest takes a meaningfully shorter dirt route (Meyers to LTCC: 9.7 km meadow paths instead of 11.9 km of US 50). Unpaved share 3.2 to 7.0%, routes over 1.5x 10 to 6; at 0 the Spooner grade reverse leaves US 50 for Forest Road 039.
+- **Prefer Dirt.** `paved_penalty` 2 gives 49% unpaved (quiet) and 37% (busy). Higher values add
+  detours quickly (3: 29 and 13 routes over 1.5x). The Marlette Flume Trail is chosen in scenario 5
+  at 2; in scenario 6 it needs 2.25 (forward) to 3 (reverse), which costs four to six more routes over 1.5x,
+  so Fastest Route plus Prefer Dirt keeps SR 28 there on purpose.
+
+Dirt scenarios can pass through wilderness the OSM data does not mark `bicycle=no`.
+
+Scenarios 1 and 2 against v2-20261019 (the same 622 trips): about 60% of scenario 1 routes and 50% of
+scenario 2 routes differ at least a little; 17 and 20 change by more than 5 km, nearly all of them
+shorter (Carson City to Spooner Summit in Fastest Route 109 km to 19 km, Carson City junction to
+Glenbrook 100 to 21 km).
 
 ## Adding a region
 

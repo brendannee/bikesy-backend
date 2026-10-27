@@ -1,0 +1,13 @@
+{
+  "description": "Production today: scenarios 1 and 2 on the deployed v2-20261019 data image (policy built before the hill filter, stock engine, which ignores the surface keys of the current config).",
+  "base": "config",
+  "modes": {
+    "3": null,
+    "4": null,
+    "5": null,
+    "6": null
+  },
+  "engine": {
+    "image": "vcr.vercel.com/tahoebike/bikesy-backend/routing-data:v2-20261019"
+  }
+}
