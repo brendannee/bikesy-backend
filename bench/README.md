@@ -66,19 +66,50 @@ npm run bench -- --region tahoe --tuning config --tuning deployed --sets curated
 node bench/crosscheck.mjs "$BIKESY_BENCH_DIR"/runs/2026-10-18-crosscheck
 ```
 
+## What a good route means per mode
+
+Expectations and flags encode the product owner's goals, not a generic shortest-path ideal.
+
+**Avoid Busy Roads** (facet `traffic: quiet`) means staying off high-speed arterials whenever any
+alternative exists, even at the cost of a large detour or climb. Riders who accept busy roads pick
+Fastest Route. So detour and climb caps (`max_detour`, `max_climb_m`, `max_via_ratio`) belong on
+Fastest modes (`traffic: busy`) only, unless a pair's note documents a specific rider desire. Quiet
+modes are limited by busy-road caps (`max_busy_km`, `max_arterial_share`), Class I floors and
+high-stress caps instead.
+
+**Prefer Paved** (`surface: paved`) is for a rider who may be on a road bike and cannot ride dirt: an
+unpaved share above about 2% is a failure (`max_unpaved_share`), and a long paved detour, even on a
+busier road, is an acceptable way to get there.
+
+**Prefer Dirt** (`surface: dirt`) accepts a large detour and climb to ride dirt; its floors are
+`min_unpaved_share` and it has no detour cap.
+
+**Paved and Dirt** (`surface: mixed`) is lowest cost regardless of surface.
+
+**Avoid Busy detours are judged against Fastest, not against the shortest route.** Each quiet route
+is compared with the Fastest route of the same hills and surface (`vs_fastest`: `busy_avoided_km`,
+`detour_vs_fastest`, `residual_busy_share`). A detour is a problem only when it buys nothing. The
+report's Problems section lists two flags for quiet modes: "did not avoid" (the route still rides
+over half of Fastest's busy km, Fastest having at least 1 km) and "detour bought nothing" (over
+1.3x Fastest's distance for under 0.3 km of busy road avoided). The plain "detour over 1.5x"
+count stays in the tables for quiet modes as information and is a Problem only for other modes.
+`node bench/reeval.mjs RUN_DIR` re-evaluates a saved run against the current pair expectations
+and flags without rerouting.
+
 ## Pair catalogs
 
 `bench/pairs/REGION.json` is the curated set; `REGION-NAME.json` is another set. The
-runner uses `curated`, `sampled`, `realistic` and `user` by default, those that exist;
+runner uses `curated`, `slt`, `sampled`, `realistic` and `user` by default, those that exist (`slt` is Tahoe only);
 `--sets` picks. Sets stay separate in all output so curated pairs cannot hide behaviour
 on the sampled ones.
 
 | Set | Tahoe | SF | What it is |
 | --- | --- | --- | --- |
 | `curated` | `tahoe.json` (40) | `sf.json` (45) | Hand-picked pairs with `expect` rules, known bugs and reference tracks. |
-| `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 200 one-way pairs drawn from building and address density (seed 1). The baseline for comparisons; do not regenerate it. |
+| `sampled` | `tahoe-sampled.json` | `sf-sampled.json` | 199 one-way pairs (200 drawn from building and address density, seed 1, minus `s007`, which crosses the mountains and is not a realistic trip; see `removed_pairs` in the file). The baseline for comparisons; do not regenerate it. |
 | `realistic` | `tahoe-realistic.json` (71) | `sf-realistic.json` (70) | Pairs with a `purpose`, a `share` and a relative `weight`. Tahoe: public places weighted by where people searched for routes on the Tahoe Bike Map (2019–2026). SF: commute flows from LODES and ACS. See [Realistic pairs](#realistic-pairs). |
 | `sampled-weighted` | `tahoe-sampled-weighted.json` | `sf-sampled-weighted.json` | 200 one-way pairs sampled from weighted points and trip purposes. Opt in with `--sets sampled-weighted`. |
+| `slt` | `tahoe-slt.json` (120) | none | 120 one-way pairs with both ends in South Lake Tahoe, Stateline and Meyers (bbox -120.03,38.85,-119.92,38.965), 1-10 km straight line, drawn from building and address density with `--alpha 1.0` (seed 2). For judging Avoid Busy Roads. Runs by default for Tahoe; the six `rider` pairs of the curated set run alone with `--sets curated --tags rider`. |
 | `user` | `tahoe-user.json` | `sf-user.json` | Trips you add with `add-trips.mjs`. Git-ignored (it can hold places that identify people). |
 
 Pairs from outside the repository join a run with `--pairs-file [NAME=]FILE` (repeatable,
@@ -108,8 +139,32 @@ npm run bench -- --region tahoe --sets realistic --pairs-file realistic=path/to/
 - `via` (optional) also routes from→via and via→to for each mode, for the `via_ratio`
   metric (route additivity: a direct route much longer than one forced through a known
   good point means some edge cost is wrong).
-- `references` (optional) are GPX tracks, relative to the catalog file, for the
-  `reference_overlap` metric. `modes` selects which modes they apply to.
+- `references` (optional) are tracks for the `reference_overlap` metric, either
+  `{"gpx": "refs/x.gpx"}` (a GPX file relative to the catalog, for hand-made tracks) or
+  `{"polyline": {"file": "approved-refs/tahoe.json", "key": "<entry>"}}` (an entry of a polyline file
+  relative to the catalog, see Approved routes). `modes` selects which modes they apply to.
+- **Approved routes** (owner-reviewed, kept to flag later changes): one entry per pair,
+  direction, scenario and approval date in `bench/pairs/approved-refs/<region>.json` (tahoe.json), keyed
+  `<pair>.forward.s<scenario>`: `{"routes": {key: {"pair", "direction", "mode", "approved",
+  "note"?, "polyline"}}}`, where `polyline` is the route's exact vertices as a precision-6
+  encoded polyline (the encoding Valhalla and the adapter use; `src/polyline.js` `decode(text, 6)`).
+  Each is a catalog `references` entry keyed to its scenario with `"modes": {"mode": "3"}` (a
+  reference only applies to modes it matches, so a pair can hold one track per scenario),
+  e.g. `{"modes": {"mode": "3"}, "polyline": {"file": "approved-refs/tahoe.json", "key": "<pair>.forward.s3"}, "approved": "2026-10-22"}`,
+  plus the tag `approved`, and one expectation for the approved scenarios and direction:
+  `{"modes": {"mode": ["1","2","3","5"]}, "direction": "forward", "min_reference_overlap": 0.9, "note": "Owner-approved route 2026-10-22 ..."}`.
+  To add one from a `/route` response (polyline5, 5-decimal vertices), re-encode the vertices
+  unchanged at precision 6: `node -e` with `decode(shape, 5)` from `src/polyline.js`, then each
+  coordinate times 1e6 rounded to an integer, delta-encoded as in `encode(points, 6)` (round
+  first: `encode` truncates). Paste the string as a new `routes` entry and add the matching
+  `references` entry. Do not simplify: the metric measures against every vertex.
+  `reference_overlap` is the smaller of the route share within 30 m of the track and the
+  track share within 30 m of the route, so snapping noise stays at 0.98 or more (exact
+  repeats score 1.0) while 0.9 fails once about a tenth of the route changes. Tracks were
+  captured from the adapter's `/route` polyline5 path (5-decimal vertices); the matching tuning is
+  `config` (the committed `config/tahoe.json`). Check with
+  `npm run bench -- --region tahoe --sets curated --tags approved --tuning config --valhalla URL`.
+  Replace a track (new key and date) only when the owner approves the new route.
 - `expect` entries select modes by **facets**, never by scenario number: `"*"` is every
   mode, `{"traffic": "quiet"}` every mode with that facet, `{"surface": ["dirt", "mixed"]}`
   any of, and `{"mode": "1"}` one mode by name. `direction` limits an entry to
@@ -428,6 +483,9 @@ come from Valhalla 3.5.1 `trace_attributes` on the route's own shape, elevation 
 | `climb_m` | Total ascent, ignoring rises under 3 m between reversals (DEM noise). |
 | `unpaved_km`, `unpaved_share` | Surfaces other than paved_smooth/paved/paved_rough: compacted and worse, which includes untagged paths. |
 | `high_stress_km`, `high_stress_share` | Ridden on a motorway, or on a trunk/primary/secondary road (incl. its ramps and turn channels) with a tagged limit ≥ 45 mph (72 km/h) or with neither a bike lane (`cycle_lane` dedicated/separated) nor a shoulder. Sharrows are not a lane; untagged speed limits count as low. |
+| `arterial_km`, `arterial_share` | Ridden on a motorway, trunk, primary or secondary road (incl. ramps and turn channels), whatever its speed limit, bike lane or shoulder: the busy-road share that "Avoid Busy Roads" questions need when a bike lane keeps an arterial out of `high_stress_km`. |
+| `busy_km`, `busy_share` | Ridden on a motorway/trunk/primary/secondary road (incl. ramps and turn channels) with a tagged limit >= 35 mph (56 km/h), whatever the bike lane or shoulder: the engine's busy-weight definition. Untagged limits never count. |
+| `busy_town_km`, `busy_lowdensity_km` | `busy_km` split by Valhalla `edge.density`: >= 5 (town) and < 5. Diagnostic only; the engine's `busy_penalty` applies everywhere. |
 | `class_i_share` | Paved, car-free path (cycleway, path, footway, pedestrian; not sidewalks) ridden on the bike. |
 | `wilderness_km` | Length inside the region's wilderness polygons (segment midpoints). |
 | `walk_km` | Walking sections (stairs, dismount). |
@@ -450,6 +508,25 @@ median climb, wilderness km, expectations checked and pass rate, pair-weighted m
 and pathological share (for pairs with a `weight`), and **mode separation**
 (`same_route_share`: how often a mode's route is the same as another mode's, i.e. ≥ 95%
 overlap within 20 m both ways). Add one by appending to `AGGREGATES`.
+
+**Avoid Busy against Fastest.** Each route in a `traffic: quiet` mode is compared with the
+route of the same tuning and trip in the `traffic: busy` mode with the same hills and surface
+facets (config scenarios 1-2, 3-4, 5-6) and carries `vs_fastest` in `results.json`:
+`detour_vs_fastest` (distance / Fastest distance), `busy_avoided_km`, `residual_busy_share`
+(busy km / Fastest busy km, null when Fastest has under 0.3 busy km) and `avoidance_efficiency`
+(extra km per busy km avoided, null when under 0.3 km avoided). Aggregates (Avoid Busy modes
+only): `median_detour_vs_fastest`, `p90_detour_vs_fastest`, `mean_residual_busy_share`,
+`did_not_avoid_share` (residual share > 0.5), `detour_bought_nothing_share` (under 0.3 busy km
+avoided at over 1.3x the Fastest distance) and `median_avoidance_efficiency`; `summary.md`
+and the report scorecard show them with `arterial_share` and `busy_share`.
+
+```sh
+npm run bench -- --region tahoe --sets slt --valhalla http://127.0.0.1:18002/ --name slt
+node bench/set-summary.mjs "$BIKESY_BENCH_DIR/runs/$(date +%F)-slt"
+```
+
+Regenerate the set with `node bench/sample-pairs.mjs --region tahoe --pbf tahoe.osm.pbf --count 120
+--seed 2 --alpha 1.0 --min-km 1 --max-km 10 --bbox=-120.03,38.85,-119.92,38.965 --set slt --tag slt`.
 
 ## Report
 
@@ -612,6 +689,72 @@ To reproduce, with the policy variants in `$BIKESY_POLICY_VARIANTS`:
 npm run bench -- --region tahoe --tuning config --tuning packages --sets curated,sampled --name packages
 npm run bench:report -- "$BIKESY_BENCH_DIR"/runs/<date>-packages --baseline config
 ```
+
+## Example: Tahoe tuning, October 2026
+
+Tuning the six Tahoe scenarios (`config/tahoe.json`) with the committed hill filter, one
+family at a time, on the 2026-10-19 graph and the curated, sampled and realistic sets
+(422 trips per scenario). Each stage changes one family and holds the rest:
+
+1. **Baseline.** `config` on an image built with the filter, next to `today` (scenarios 1 and 2 on
+   the deployed v2-20261019 image), in one run.
+2. **Hill cost.** `hills-use.sweep.json` (`use_hills`), then `hill-exponent.sweep.json`, whose policy
+   files come from `build_policy` with its optional exponent argument.
+3. **Traffic.** `use_roads` for the quiet and busy scenarios as tunings that hold only those modes.
+4. **Surface.** `unpaved_penalty` for scenarios 1 to 4 and `paved_penalty` for 5 and 6, then the
+   Spooner grade and Marlette Flume pairs (`es-spooner-grade-summit`, `es-spooner-tunnelcreek`).
+5. **Combination.** The `config` tuning on a data image built from the final config, with the
+   paved surface defaults on and off, then the same bench on SF.
+
+Judge on the sampled and realistic sets; curated expectations are guardrails. When an expectation
+fails in a mode it was not written for, scope it to the right facets and say so. This round moved
+six rules: the Class I minimums (Kiva, Truckee to Northstar, Tahoe City to Olympic Valley) and the
+busy US 50 detour and via-ratio limits (Carson City junction to Glenbrook, Spooner grade) now apply
+to the mixed and paved surface only, since Prefer Dirt trades both for trails; Tunnel Creek's 60%
+unpaved minimum applies to quiet dirt only, because Fastest Route plus Prefer Dirt may take SR 28
+instead of the Flume Trail.
+
+To show SF is unaffected by a change that is not Tahoe-only, run the SF bench on the same SF image
+before and after with a fresh `BIKESY_BENCH_DIR` and compare `response_sha256` per route:
+
+```sh
+npm run bench -- --region sf --image bikesy-sf-data:latest --tuning config --name sf-after
+```
+
+## Example: Tahoe busy roads, October 2026
+
+Riders found that Avoid Busy Roads still used US 50 and Pioneer Trail where quiet streets and
+paths ran alongside ([Busy roads](../docs/REGIONS.md#busy-roads)). The judge is the
+[vs-Fastest scorecard](#aggregates) on the `slt` and `realistic` sets: busy share, did-not-avoid
+and the detour against the Fastest Route twin. A sweep of the one engine key, on an engine with
+the patch (the Fastest modes are dropped because the key does not apply to them):
+
+```json
+{ "base": "config", "modes": { "2": null, "4": null, "6": null },
+  "grid": { "options.busy_penalty": [0, 1, 1.5, 2, 3, 5] } }
+```
+
+```sh
+npm run bench -- --region tahoe --image IMAGE --tuning config --tuning busy-global \
+  --sets slt,realistic,curated --name busy-global
+```
+
+Scenario 1 (Avoid Busy Roads, Paved and Dirt), 2026-10-22, `config/tahoe.json` otherwise:
+
+| `busy_penalty` | `slt` busy share | `realistic` busy share | Notes |
+| --- | --- | --- | --- |
+| 0 (stock) | 9.1% | 27.0% | Samurai Sushi to Tahoe Bagel on US 50; Meyers to LTCC on Pioneer Trail |
+| 1 | 2.6% | 24.1% | rider cases in town fixed; Tahoe City to Truckee leaves SR 89 for Martis Valley (22% dirt) |
+| 1.5 | 1.9% | 16.3% | |
+| **2 (config)** | **1.6%** | **14.1%** | Carson City to Tahoe Blue via Genoa Peak Rd (63% dirt, 1,513 m) from 0.5 up |
+| 3 | 1.2% | 9.7% | |
+| 5 | 0.8% | 5.8% | long tail of detours grows faster than the gain |
+
+Prefer Paved (3, 4) ride `bicycle_type` Road with `avoid_bad_surfaces` 1, which keeps them off dirt
+at every penalty (0 trips over 2% dirt on `slt` and `curated`); `unpaved_penalty` alone cannot,
+because the engine caps it at 10 and 10 routes like 8. The curated expectations at 2 pass except
+the two the owner accepted and rescoped: the Carson City default route over Genoa Peak, and
+0.14 km of US 50 on Samurai to Bagel in Prefer Dirt.
 
 ## Example: SF baseline, October 2026
 

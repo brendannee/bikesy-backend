@@ -34,6 +34,13 @@ int main(){
  {std::vector<double> h{1900,1903};require(near(profile_uphill(h,30).first,positive_grade_integral(3,kHillMinRun)));
   require(profile_uphill(h,30).first<positive_grade_integral(3,30));
   require(near(profile_uphill(h,200).first,positive_grade_integral(3,200)));}
+ // Grade exponent: 3 is exactly the original cubic; every exponent costs a steady 5% grade at about 1 per metre.
+ require(grade_cost(10,100)==positive_grade_integral(10,100));require(grade_cost(10,100,3)==positive_grade_integral(10,100));
+ require(near(grade_cost(5,100,2),100)&&near(grade_cost(5,100,1.5),100)&&near(grade_cost(5,100,3),100));
+ require(grade_cost(10,100,2)<grade_cost(10,100,3)&&grade_cost(10,100,2)>grade_cost(10,100,1.5));
+ require(near(grade_cost(10,100,2),400)&&grade_cost(-10,100,2)==0);
+ {auto h=ramp(21,1.5);require(near(profile_uphill(h,600,kHillDeadBand,kHillMinRun,nullptr,2).first,grade_cost(30,600,2)));
+  require(profile_uphill(h,600,kHillDeadBand,kHillMinRun,nullptr,3)==profile_uphill(h,600));}
 // Orientation: the hysteresis is directional, so each direction is costed by its own pass and
 // reversing the samples exchanges the two costs exactly. Humps near the band size are where a
 // single shared pass would disagree with itself.

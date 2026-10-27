@@ -33,14 +33,38 @@ test('all SF scenarios preserve hills and facilities axes', () => {
   assert.deepEqual(parseQuery(query(), config), parseQuery(query('&scenario=1'), config));
   assert.deepEqual(parseQuery(query('&scenario='), config), parseQuery(query(), config));
 });
-test('Tahoe has only two scenarios with no hill control', () => {
+test('Tahoe has a traffic x trail surface grid of six scenarios', () => {
   const c = loadConfig({ BIKESY_CONFIG: 'config/tahoe.json' });
   const q = new URLSearchParams('lat1=39&lat2=39.1&lng1=-120&lng2=-120.1');
-  assert.equal(parseQuery(q, c).costing_options.bicycle.use_roads, 0);
-  q.set('scenario', '2');
-  assert.equal(parseQuery(q, c).costing_options.bicycle.use_roads, 1);
-  q.set('scenario', '3');
-  assert.throws(() => parseQuery(q, c), /Invalid `scenario` 3/);
+  const bicycle = scenario => { q.set('scenario', scenario); return parseQuery(q, c).costing_options.bicycle; };
+  assert.deepEqual(Object.keys(c.scenarios), ['1', '2', '3', '4', '5', '6']);
+  assert.equal(parseQuery(new URLSearchParams(q), c).costing_options.bicycle.use_roads, 0.1, 'scenario 1 is the default');
+  // Avoid Busy Roads keeps a little road tolerance (0.1) and Fastest Route a little
+  // bike-facility preference (0.8); both stay on their side of the bench's quiet/busy facets.
+  for (const [id, roads] of [['1', 0.1], ['2', 0.8], ['3', 0.1], ['4', 0.8], ['5', 0.1], ['6', 0.8]]) {
+    assert.equal(bicycle(id).use_roads, roads, `scenario ${id}`);
+    assert.equal(bicycle(id).use_hills, 0.5, `scenario ${id}`);
+  }
+  assert.equal(bicycle('3').unpaved_penalty, 8, 'Prefer Paved avoids dirt at nearly any cost');
+  assert.equal(bicycle('4').unpaved_penalty, 8);
+  assert.equal(bicycle('1').paved_penalty, undefined);
+  assert.equal(bicycle('1').unpaved_penalty, 1, 'the default scenario treats all unpaved surfaces alike');
+  assert.equal(bicycle('2').unpaved_penalty, 0.25, 'Fastest Route costs dirt like the Hybrid speed loss');
+  assert.equal(bicycle('5').paved_penalty, 2);
+  assert.equal(bicycle('6').paved_penalty, 2);
+  // Avoid Busy Roads charges fast arterials everywhere (busy_penalty); Fastest Route keeps stock costs.
+  for (const id of ['1', '3', '5']) assert.equal(bicycle(id).busy_penalty, 2, `scenario ${id}`);
+  for (const id of ['2', '4', '6']) assert.equal(bicycle(id).busy_penalty, undefined, `scenario ${id}`);
+  // Prefer Paved rides a road bike that refuses bad surfaces; the others are Hybrid or Mountain.
+  for (const id of ['3', '4']) {
+    assert.equal(bicycle(id).bicycle_type, 'Road', `scenario ${id}`);
+    assert.equal(bicycle(id).avoid_bad_surfaces, 1, `scenario ${id}`);
+  }
+  assert.equal(bicycle('5').bicycle_type, 'Mountain');
+  assert.equal(bicycle('1').bicycle_type, 'Hybrid');
+  assert.equal(bicycle('1').avoid_bad_surfaces, undefined);
+  q.set('scenario', '7');
+  assert.throws(() => parseQuery(q, c), /Invalid `scenario` 7/);
 });
 test('validation preserves missing errors, rejects invalid numeric and scenario inputs', () => {
   assert.throws(() => parseQuery(new URLSearchParams(), config), /No `lat1` specified/);
