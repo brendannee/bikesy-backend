@@ -338,6 +338,11 @@ every referenced way must still exist, and the motorway inventory is regenerated
 the two directories (`diff -r OLD NEW`) and the `motorway_mainline_diff_vs_carry_forward`
 list before approving.
 
+Approved reviews can be kept on the long-lived `review-records` branch, one commit per
+approval, so a region's review history is preserved without merging each refresh into
+`main`. Carry forward from the newest `graph/<slug>/` there; the branch README describes the
+layout and how to add a record.
+
 ## Prepare geographic inputs and review
 
 Use Python 3.12+ for the acquisition/locking tools (on macOS, a virtualenv: the system
