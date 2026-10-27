@@ -61,6 +61,21 @@ ask the user for the values, then write them. `routing_extracts` is optional; se
 Keep each build's workspace at `WORK=<data_dir>/<slug>-<YYYY-MM-DD>/` (the snapshot date).
 Never put raw data or build output in Git.
 
+**Review records.** Approved reviews are kept on the long-lived `review-records` branch, one
+commit per approval, so each region's review history survives across builds. The branch
+never merges into `main` and shares no history with it; its README explains the layout.
+Keep a worktree of it next to the main checkout:
+
+```sh
+git fetch origin review-records
+git worktree add ../bikesy-backend-review-records review-records   # once
+git -C ../bikesy-backend-review-records pull --ff-only             # before each build
+REVIEWS=$(cd ../bikesy-backend-review-records && pwd)
+```
+
+The latest approved review for a region is `$REVIEWS/graph/<slug>/`. If a region has no
+record there yet, use `graph/<slug>/` on `main` (or `graph/` for SF).
+
 ## 3. Environment and inputs
 
 - **Docker** must be running with enough resources (see the preflight in
@@ -96,17 +111,17 @@ Never put raw data or build output in Git.
      --admin-pbf <state extract> [--admin-pbf ...] \
      --osm-source 'Geofabrik <names> YYYY-MM-DD (replication <timestamp>)' \
      [--reuse-dem <previous WORK>/data/elevation] \
-     [--carry-forward graph/<slug>] --to review
+     [--carry-forward "$REVIEWS/graph/<slug>"] --to review
    ```
-   - Use `--carry-forward` whenever the region has an approved review (`graph/<slug>/`,
-     or `graph/` for SF).
+   - Use `--carry-forward` whenever the region has an approved review (see **Review records**
+     in § 2).
    - Reuse the previous run's DEM unless the bounds changed.
    - The toolchain image is reused automatically, and completed steps are skipped, so after
      a failure rerun the same command. `--from` / `--to` run part of the sequence.
 
 2. **Access review.** **Stop here and bring the user every decision. Never approve on
    their behalf.**
-   - Diff the candidate against the approved review: `diff -r graph/<slug> "$WORK/review"`,
+   - Diff the candidate against the approved review: `diff -r "$REVIEWS/graph/<slug>" "$WORK/review"`,
      plus `motorway_mainline_diff_vs_carry_forward` in `$WORK/review-candidates.json`.
    - Present each new or changed item with its way id, name, location, current tags and
      proposed handling. REGIONS.md explains each review field.
@@ -127,9 +142,13 @@ Never put raw data or build output in Git.
    - Run `scripts/check-detours.mjs` if it exists, and the region's canary trips from the
      region notes below.
 
-5. **Commit the approved review** to `graph/<slug>/` on a new branch
-   (`<slug>-review-YYYY-MM-DD`), along with any build or doc fixes on their own branch.
-   Never push; the user pushes.
+5. **Record the approved review** on `review-records`: replace `$REVIEWS/graph/<slug>/`
+   with the contents of `$WORK/review` and commit it, one review per commit. Commit it even
+   when only `review_status` changed, because the commit is the record of that approval.
+   Put the snapshot, the bikesy-backend commit you built with and the approver in the
+   message. Add the data image tag and digest after step 6, or record the review once the
+   image is pushed. Push `review-records` when the user approves; it never merges into
+   `main`. Build or doc fixes go on their own branch off `main`, as a PR.
 
 6. **Publish the data image (needs the user's approval).** Push the new runtime as an
    immutable data image to the region's Vercel project registry:
@@ -149,13 +168,14 @@ Never put raw data or build output in Git.
 
 7. **Record the run:** add the build details to the release entry release-backend writes
    in `<data_dir>/RUNS.md`: snapshot, runtime `engine-policy.json` sha256, image tag and
-   digest, review status, timings from `$WORK/timings.tsv`, and issues. Add new general findings to the lessons below, and
+   digest, review status and its `review-records` commit, timings from `$WORK/timings.tsv`, and issues. Add new general findings to the lessons below, and
    deployer-specific ones to the local settings `notes`.
 
 ## Approval gates
 
 Stop and ask before each of these:
 - approving review items or a new region's bounds and states;
+- pushing `review-records`;
 - pushing to the registry (deploy and promotion gates are in release-backend);
 - deleting old images or workspaces.
 
@@ -196,8 +216,9 @@ Facts about a region's data that every deployer needs.
   - Canary: Carson City (39.1638, -119.7674) → Spooner Summit (39.1050, -119.8960). In
     scenario 2 it detours about 109 km via Luther Pass because of the hill cost issue,
     although US 50 is correctly mapped as a divided highway (ways 307623778 and 691578108).
-  - Approved review: `graph/tahoe/` (2026-10-14). Every motorway excluded, including I-80
-    segments tagged `bicycle=yes`.
+  - Approved review: latest `graph/tahoe/` on `review-records` (history from 2026-10-14;
+    `graph/tahoe/` on `main` is the 2026-10-14 original). Every motorway excluded, including
+    I-80 segments tagged `bicycle=yes`.
 - **sf**: the review lives in `graph/`, not `graph/sf/`. The checked-in root Dockerfile
   pins the original owner's private SF image, so external deployers must publish their own
   data.
